@@ -15,6 +15,7 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.AddScoped<IRelationshipRepository, RelationshipRepository>();
+        services.AddScoped<IMemoryRepository, MemoryRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 

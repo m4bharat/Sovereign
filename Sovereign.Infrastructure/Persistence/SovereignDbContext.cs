@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Sovereign.Domain.Aggregates;
+using Sovereign.Domain.Entities;
 
 namespace Sovereign.Infrastructure.Persistence;
 
@@ -11,6 +12,7 @@ public class SovereignDbContext : DbContext
     }
 
     public DbSet<Relationship> Relationships => Set<Relationship>();
+    public DbSet<MemoryEntry> Memories => Set<MemoryEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

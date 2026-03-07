@@ -12,6 +12,7 @@ public static class DependencyInjection
         services.AddScoped<CreateRelationshipUseCase>();
         services.AddScoped<LogInteractionUseCase>();
         services.AddScoped<GenerateStrategyUseCase>();
+        services.AddScoped<ProcessAiMessageUseCase>();
         services.AddScoped<IToneAdjustmentStrategy, RuleBasedToneStrategy>();
         return services;
     }

@@ -14,7 +14,7 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(connectionString);
-builder.Services.AddSovereignIntelligence();
+builder.Services.AddSovereignIntelligence(builder.Configuration);
 
 var app = builder.Build();
 
