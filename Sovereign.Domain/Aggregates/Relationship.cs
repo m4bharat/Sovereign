@@ -1,6 +1,3 @@
-
-using System;
-using System.Collections.Generic;
 using Sovereign.Domain.Common;
 using Sovereign.Domain.Enums;
 using Sovereign.Domain.Events;
@@ -9,10 +6,34 @@ namespace Sovereign.Domain.Aggregates;
 
 public class Relationship : BaseEntity
 {
-    private readonly List<DateTime> _interactionHistory = new();
+    private Relationship()
+    {
+        UserId = string.Empty;
+        ContactId = string.Empty;
+    }
 
-    public required string UserId { get; set; }
-    public required string ContactId { get; set; }
+    public Relationship(Guid id, string userId, string contactId, RelationshipRole role)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+            throw new ArgumentException("UserId is required.", nameof(userId));
+        if (string.IsNullOrWhiteSpace(contactId))
+            throw new ArgumentException("ContactId is required.", nameof(contactId));
+
+        Id = id;
+        UserId = userId;
+        ContactId = contactId;
+        Role = role;
+        LastInteractionAtUtc = DateTime.UtcNow;
+        ReciprocityScore = 0.50d;
+        MomentumScore = 0.0d;
+        PowerDifferential = 0.0d;
+        EmotionalTemperature = 0.0d;
+
+        AddDomainEvent(new RelationshipCreatedEvent(id));
+    }
+
+    public string UserId { get; private set; }
+    public string ContactId { get; private set; }
     public RelationshipRole Role { get; private set; }
 
     public double ReciprocityScore { get; private set; }
@@ -22,43 +43,24 @@ public class Relationship : BaseEntity
 
     public DateTime LastInteractionAtUtc { get; private set; }
 
-    public Relationship() { }
-
-    public Relationship(Guid id, string userId, string contactId, RelationshipRole role)
-    {
-        Id = id;
-        UserId = userId;
-        ContactId = contactId;
-        Role = role;
-        LastInteractionAtUtc = DateTime.UtcNow;
-
-        AddDomainEvent(new RelationshipCreatedEvent(id));
-    }
-
     public void LogInteraction()
     {
-        var now = DateTime.UtcNow;
-        _interactionHistory.Add(now);
-        LastInteractionAtUtc = now;
-        MomentumScore += 0.1;
-
+        LastInteractionAtUtc = DateTime.UtcNow;
+        MomentumScore = Math.Min(1.0d, MomentumScore + 0.10d);
         AddDomainEvent(new InteractionLoggedEvent(Id));
     }
 
     public void RecordOutcome(OutcomeLabel label)
     {
         if (label == OutcomeLabel.PositiveResponse)
-            ReciprocityScore += 0.05;
+            ReciprocityScore = Math.Min(1.0d, ReciprocityScore + 0.05d);
 
         AddDomainEvent(new OutcomeRecordedEvent(Id));
     }
 
-    public double CalculateDecayScore()
+    public void UpdateSignals(double powerDifferential, double emotionalTemperature)
     {
-        var silenceDays = (DateTime.UtcNow - LastInteractionAtUtc).Days;
-
-        return Math.Pow(silenceDays, 1.2)
-               * (1 + PowerDifferential)
-               * (1 - ReciprocityScore);
+        PowerDifferential = powerDifferential;
+        EmotionalTemperature = emotionalTemperature;
     }
 }

@@ -1,19 +1,16 @@
-
 using Sovereign.Application.Interfaces;
 
 namespace Sovereign.Infrastructure.Persistence;
 
-public class UnitOfWork : IUnitOfWork
+public sealed class UnitOfWork : IUnitOfWork
 {
-    private readonly SovereignDbContext _context;
+    private readonly SovereignDbContext _dbContext;
 
-    public UnitOfWork(SovereignDbContext context)
+    public UnitOfWork(SovereignDbContext dbContext)
     {
-        _context = context;
+        _dbContext = dbContext;
     }
 
-    public async Task<int> SaveChangesAsync(CancellationToken ct = default)
-    {
-        return await _context.SaveChangesAsync(ct);
-    }
+    public Task<int> SaveChangesAsync(CancellationToken ct = default)
+        => _dbContext.SaveChangesAsync(ct);
 }

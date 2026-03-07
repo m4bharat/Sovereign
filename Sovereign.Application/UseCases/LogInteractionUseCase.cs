@@ -1,4 +1,4 @@
-
+using Sovereign.Application.DTOs;
 using Sovereign.Application.Interfaces;
 
 namespace Sovereign.Application.UseCases;
@@ -16,17 +16,22 @@ public sealed class LogInteractionUseCase
         _dispatcher = dispatcher;
     }
 
-    public async Task ExecuteAsync(Guid relationshipId, CancellationToken ct = default)
+    public async Task<LogInteractionResponse> ExecuteAsync(Guid relationshipId, CancellationToken ct = default)
     {
         var relationship = await _repository.GetByIdAsync(relationshipId, ct)
-            ?? throw new InvalidOperationException("Relationship not found");
+            ?? throw new InvalidOperationException("Relationship not found.");
 
         relationship.LogInteraction();
 
         await _repository.UpdateAsync(relationship, ct);
         await _repository.SaveChangesAsync(ct);
-
         await _dispatcher.DispatchAsync(relationship.DomainEvents, ct);
         relationship.ClearDomainEvents();
+
+        return new LogInteractionResponse
+        {
+            RelationshipId = relationship.Id,
+            LoggedAtUtc = relationship.LastInteractionAtUtc
+        };
     }
 }

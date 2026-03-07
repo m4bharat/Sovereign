@@ -1,4 +1,3 @@
-
 using Sovereign.Application.Interfaces;
 using Sovereign.Domain.Enums;
 using Sovereign.Domain.ValueObjects;
@@ -7,23 +6,24 @@ namespace Sovereign.Application.Engines;
 
 public sealed class RuleBasedToneStrategy : IToneAdjustmentStrategy
 {
-    public ToneVector Adjust(
-        ToneVector baseVector,
-        RelationshipRole role,
-        StrategicGoal goal)
+    public ToneVector Adjust(ToneVector baseVector, RelationshipRole role)
     {
-        double warmth = 0;
-        double assertiveness = 0;
+        var warmth = 0d;
+        var assertiveness = 0d;
+        var deference = 0d;
 
-        if (role == RelationshipRole.Investor)
-            assertiveness += 0.2;
+        switch (role)
+        {
+            case RelationshipRole.Investor:
+            case RelationshipRole.HiringManager:
+                assertiveness += 0.2d;
+                deference += 0.1d;
+                break;
+            case RelationshipRole.Friend:
+                warmth += 0.3d;
+                break;
+        }
 
-        if (goal == StrategicGoal.Negotiate)
-            assertiveness += 0.3;
-
-        if (goal == StrategicGoal.Reconnect)
-            warmth += 0.4;
-
-        return baseVector.Adjust(warmth, assertiveness, 0, 0, 0, 0);
+        return baseVector.Adjust(warmth, assertiveness, 0, 0, deference, 0);
     }
 }

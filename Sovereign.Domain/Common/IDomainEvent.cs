@@ -1,4 +1,3 @@
-
 namespace Sovereign.Domain.Common;
 
 public interface IDomainEvent

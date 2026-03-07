@@ -1,17 +1,18 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
+using Sovereign.Application.Engines;
+using Sovereign.Application.Interfaces;
+using Sovereign.Application.UseCases;
 
 namespace Sovereign.Application;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddApplication(
-        this IServiceCollection services)
+    public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        // Example: register MediatR or validators later
-        // services.AddMediatR(cfg =>
-        //     cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly()));
-
+        services.AddScoped<CreateRelationshipUseCase>();
+        services.AddScoped<LogInteractionUseCase>();
+        services.AddScoped<GenerateStrategyUseCase>();
+        services.AddScoped<IToneAdjustmentStrategy, RuleBasedToneStrategy>();
         return services;
     }
 }

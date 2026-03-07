@@ -14,7 +14,6 @@ public static class IntelligenceServiceCollection
         services.AddSingleton<IRelationshipIntelligenceEngine, RelationshipIntelligenceEngine>();
         services.AddSingleton<IInteractionEngine, InteractionEngine>();
         services.AddSingleton<IAIStrategyService, AIStrategyService>();
-
         return services;
     }
 }

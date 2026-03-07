@@ -1,18 +1,7 @@
-
 namespace Sovereign.Domain.ValueObjects;
 
-/// <summary>
-/// Multi-dimensional tone representation.
-/// </summary>
 public sealed class ToneVector
 {
-    public double Warmth { get; }
-    public double Assertiveness { get; }
-    public double Formality { get; }
-    public double Directness { get; }
-    public double Deference { get; }
-    public double EmotionalIntensity { get; }
-
     public ToneVector(
         double warmth,
         double assertiveness,
@@ -28,6 +17,13 @@ public sealed class ToneVector
         Deference = deference;
         EmotionalIntensity = emotionalIntensity;
     }
+
+    public double Warmth { get; }
+    public double Assertiveness { get; }
+    public double Formality { get; }
+    public double Directness { get; }
+    public double Deference { get; }
+    public double EmotionalIntensity { get; }
 
     public ToneVector Adjust(
         double warmthDelta,

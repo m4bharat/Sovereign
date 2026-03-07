@@ -21,10 +21,10 @@ public sealed class InteractionEngine : IInteractionEngine
                 RecommendedAction = "Reconnect",
                 RecommendedStance = "Warm-Strategic",
                 DraftPrompt = _promptTemplateProvider.BuildReconnectPrompt(
-                    context.Role,
+                    context.Role.ToString(),
                     context.LastTopicSummary,
                     "Warm-Strategic"),
-                Reasoning = "High decay risk detected due to silence and weak reciprocity."
+                Reasoning = "High decay risk detected."
             };
         }
 
@@ -35,10 +35,10 @@ public sealed class InteractionEngine : IInteractionEngine
                 RecommendedAction = "Advance",
                 RecommendedStance = "Strategic",
                 DraftPrompt = _promptTemplateProvider.BuildMaintainPrompt(
-                    context.Role,
+                    context.Role.ToString(),
                     context.LastTopicSummary,
                     "Strategic"),
-                Reasoning = "Opportunity signal is high. A value-forward message is likely beneficial."
+                Reasoning = "Opportunity signal is high."
             };
         }
 
@@ -47,10 +47,10 @@ public sealed class InteractionEngine : IInteractionEngine
             RecommendedAction = "Maintain",
             RecommendedStance = "Light-Warm",
             DraftPrompt = _promptTemplateProvider.BuildMaintainPrompt(
-                context.Role,
+                context.Role.ToString(),
                 context.LastTopicSummary,
                 "Light-Warm"),
-            Reasoning = "Relationship is stable. Maintain presence without over-investing."
+            Reasoning = "Relationship is stable."
         };
     }
 }

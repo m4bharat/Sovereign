@@ -1,10 +1,9 @@
-
 namespace Sovereign.Domain.Enums;
 
 public enum OutcomeLabel
 {
-    PositiveResponse,
-    NoResponse,
-    Rejected,
-    ClosedDeal
+    PositiveResponse = 1,
+    NoResponse = 2,
+    Rejected = 3,
+    ClosedDeal = 4
 }

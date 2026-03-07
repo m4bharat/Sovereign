@@ -1,6 +1,4 @@
-
 <Project Sdk="Microsoft.NET.Sdk.Web">
-
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -8,13 +6,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MediatR" Version="8.0.0" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Sovereign.Domain\Sovereign.Domain.csproj" />
     <ProjectReference Include="..\Sovereign.Application\Sovereign.Application.csproj" />
     <ProjectReference Include="..\Sovereign.Infrastructure\Sovereign.Infrastructure.csproj" />
+    <ProjectReference Include="..\Sovereign.Intelligence\Sovereign.Intelligence.csproj" />
   </ItemGroup>
-
 </Project>

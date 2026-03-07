@@ -1,4 +1,3 @@
-
 using Sovereign.Domain.Common;
 
 namespace Sovereign.Application.Interfaces;

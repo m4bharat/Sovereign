@@ -1,4 +1,3 @@
-
 namespace Sovereign.Application.Interfaces;
 
 public interface IUnitOfWork

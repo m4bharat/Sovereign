@@ -1,3 +1,5 @@
+using Sovereign.Domain.Enums;
+
 namespace Sovereign.Intelligence.Models;
 
 public sealed class RelationshipContext
@@ -5,7 +7,7 @@ public sealed class RelationshipContext
     public Guid RelationshipId { get; init; }
     public string UserId { get; init; } = string.Empty;
     public string ContactId { get; init; } = string.Empty;
-    public string Role { get; init; } = string.Empty;
+    public RelationshipRole Role { get; init; }
     public int TotalInteractions { get; init; }
     public int SilenceDays { get; init; }
     public double ReciprocityScore { get; init; }

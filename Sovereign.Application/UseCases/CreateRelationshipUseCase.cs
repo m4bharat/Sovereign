@@ -1,29 +1,43 @@
-﻿using Sovereign.Application.DTOs;
+using Sovereign.Application.DTOs;
 using Sovereign.Application.Interfaces;
 using Sovereign.Domain.Aggregates;
 
 namespace Sovereign.Application.UseCases;
 
-public class CreateRelationshipUseCase
+public sealed class CreateRelationshipUseCase
 {
     private readonly IRelationshipRepository _repository;
+    private readonly IDomainEventDispatcher _dispatcher;
 
-    public CreateRelationshipUseCase(IRelationshipRepository repository)
+    public CreateRelationshipUseCase(
+        IRelationshipRepository repository,
+        IDomainEventDispatcher dispatcher)
     {
         _repository = repository;
+        _dispatcher = dispatcher;
     }
 
-    public async Task<Guid> ExecuteAsync(CreateRelationshipRequest request)
+    public async Task<CreateRelationshipResponse> ExecuteAsync(
+        CreateRelationshipRequest request,
+        CancellationToken ct = default)
     {
-        var relationship = new Relationship
+        var relationship = new Relationship(
+            Guid.NewGuid(),
+            request.UserId,
+            request.ContactId,
+            request.Role);
+
+        await _repository.AddAsync(relationship, ct);
+        await _repository.SaveChangesAsync(ct);
+        await _dispatcher.DispatchAsync(relationship.DomainEvents, ct);
+        relationship.ClearDomainEvents();
+
+        return new CreateRelationshipResponse
         {
-            //Id = Guid.NewGuid(),
-            ContactId = request.ContactId,
-            UserId = request.UserId
+            RelationshipId = relationship.Id,
+            UserId = relationship.UserId,
+            ContactId = relationship.ContactId,
+            Role = relationship.Role
         };
-
-        await _repository.AddAsync(relationship);
-
-        return relationship.Id;
     }
 }

@@ -1,4 +1,3 @@
-
 using Sovereign.Domain.Aggregates;
 
 namespace Sovereign.Application.Interfaces;

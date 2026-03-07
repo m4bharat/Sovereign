@@ -1,10 +1,6 @@
-
-using System.Net;
-using System.Text.Json;
-
 namespace Sovereign.API.Middleware;
 
-public class ExceptionMiddleware
+public sealed class ExceptionMiddleware
 {
     private readonly RequestDelegate _next;
 
@@ -19,18 +15,15 @@ public class ExceptionMiddleware
         {
             await _next(context);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
-            context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-            context.Response.ContentType = "application/json";
-
-            var response = new
-            {
-                error = "Internal server error",
-                message = ex.Message
-            };
-
-            await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await context.Response.WriteAsJsonAsync(new { error = "Not Found", message = ex.Message });
+        }
+        catch (Exception)
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsJsonAsync(new { error = "Internal Server Error" });
         }
     }
 }

@@ -11,6 +11,5 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sovereign.Domain\Sovereign.Domain.csproj" />
-    <ProjectReference Include="..\Sovereign.Application\Sovereign.Application.csproj" />
   </ItemGroup>
 </Project>
