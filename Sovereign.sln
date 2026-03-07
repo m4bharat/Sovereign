@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.Infrastructure", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.API", "Sovereign.API\Sovereign.API.csproj", "{93242334-B6C0-0B05-D0AF-BE18094FDE0C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.Intelligence", "Sovereign.Intelligence\Sovereign.Intelligence.csproj", "{5511D77A-925B-A057-D33B-2C2E22469E58}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -35,6 +37,10 @@ Global
 		{93242334-B6C0-0B05-D0AF-BE18094FDE0C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{93242334-B6C0-0B05-D0AF-BE18094FDE0C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{93242334-B6C0-0B05-D0AF-BE18094FDE0C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5511D77A-925B-A057-D33B-2C2E22469E58}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5511D77A-925B-A057-D33B-2C2E22469E58}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5511D77A-925B-A057-D33B-2C2E22469E58}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5511D77A-925B-A057-D33B-2C2E22469E58}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

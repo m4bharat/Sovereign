@@ -1,0 +1,16 @@
+namespace Sovereign.Intelligence.Models;
+
+public sealed class RelationshipContext
+{
+    public Guid RelationshipId { get; init; }
+    public string UserId { get; init; } = string.Empty;
+    public string ContactId { get; init; } = string.Empty;
+    public string Role { get; init; } = string.Empty;
+    public int TotalInteractions { get; init; }
+    public int SilenceDays { get; init; }
+    public double ReciprocityScore { get; init; }
+    public double MomentumScore { get; init; }
+    public double PowerDifferential { get; init; }
+    public double EmotionalTemperature { get; init; }
+    public string LastTopicSummary { get; init; } = string.Empty;
+}
