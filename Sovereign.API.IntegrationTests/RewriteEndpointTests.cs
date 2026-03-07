@@ -1,17 +1,16 @@
+using FluentAssertions;
+using Sovereign.Application.DTOs;
 using System.Net;
 using System.Net.Http.Json;
-using FluentAssertions;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Sovereign.Application.DTOs;
 using Xunit;
 
 namespace Sovereign.API.IntegrationTests;
 
-public sealed class RewriteEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class RewriteEndpointTests : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly CustomWebApplicationFactory _factory;
 
-    public RewriteEndpointTests(WebApplicationFactory<Program> factory)
+    public RewriteEndpointTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
     }
@@ -34,5 +33,10 @@ public sealed class RewriteEndpointTests : IClassFixture<WebApplicationFactory<P
         var response = await client.PostAsJsonAsync("/api/ai/rewrite", request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadFromJsonAsync<RewriteMessageResponse>();
+        payload.Should().NotBeNull();
+        payload!.Variants.Should().NotBeNull();
+        payload.Variants.Should().NotBeEmpty();
     }
 }

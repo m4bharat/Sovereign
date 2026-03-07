@@ -1,15 +1,14 @@
-using System.Net;
 using FluentAssertions;
-using Microsoft.AspNetCore.Mvc.Testing;
+using System.Net;
 using Xunit;
 
 namespace Sovereign.API.IntegrationTests;
 
-public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class HealthEndpointTests : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly CustomWebApplicationFactory _factory;
 
-    public HealthEndpointTests(WebApplicationFactory<Program> factory)
+    public HealthEndpointTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
     }

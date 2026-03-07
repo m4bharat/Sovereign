@@ -1,17 +1,16 @@
+using FluentAssertions;
+using Sovereign.Application.DTOs;
 using System.Net;
 using System.Net.Http.Json;
-using FluentAssertions;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Sovereign.Application.DTOs;
 using Xunit;
 
 namespace Sovereign.API.IntegrationTests;
 
-public sealed class AiDecisionEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class AiDecisionEndpointTests : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly CustomWebApplicationFactory _factory;
 
-    public AiDecisionEndpointTests(WebApplicationFactory<Program> factory)
+    public AiDecisionEndpointTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
     }
@@ -26,11 +25,16 @@ public sealed class AiDecisionEndpointTests : IClassFixture<WebApplicationFactor
             UserId = "user-001",
             ContactId = "contact-001",
             Message = "Remember that my birthday is Jan 10",
-            RelationshipRole = "Friend"
+            RelationshipRole = "Friend",
+            RecentSummary = string.Empty,
+            LastTopicSummary = string.Empty
         };
 
         var response = await client.PostAsJsonAsync("/api/ai/decide", request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrWhiteSpace();
     }
 }
