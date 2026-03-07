@@ -16,6 +16,12 @@ public static class DependencyInjection
 
         services.AddScoped<IRelationshipRepository, RelationshipRepository>();
         services.AddScoped<IMemoryRepository, MemoryRepository>();
+        services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
+        services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
+        services.AddScoped<IConversationSummaryRepository, ConversationSummaryRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<ISocialEdgeRepository, SocialEdgeRepository>();
+        services.AddScoped<IInfluenceSnapshotRepository, InfluenceSnapshotRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 

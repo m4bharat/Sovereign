@@ -2,6 +2,7 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using Serilog;
 using Sovereign.API.Middleware;
+using Sovereign.API.Workers;
 using Sovereign.Application;
 using Sovereign.Infrastructure;
 using Sovereign.Intelligence.DependencyInjection;
@@ -19,23 +20,11 @@ builder.Host.UseSerilog((context, loggerConfiguration) =>
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
 
-//builder.Services
-//    .AddControllers()
-//    .AddFluentValidation(config =>
-//    {
-//        config.RegisterValidatorsFromAssemblyContaining<Program>();
-//        config.DisableDataAnnotationsValidation = true;
-//    });
-// 1. Register the Validators (this finds your classes like CreateRelationshipValidator)
-
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
-
-// 2. Enable Auto-Validation and/or Client-side adapters
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddFluentValidationClientsideAdapters();
 
 builder.Services.AddControllers();
-
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -45,6 +34,7 @@ builder.Services.AddHealthChecks()
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(connectionString);
 builder.Services.AddSovereignIntelligence(builder.Configuration);
+builder.Services.AddHostedService<DecayWorker>();
 
 var app = builder.Build();
 

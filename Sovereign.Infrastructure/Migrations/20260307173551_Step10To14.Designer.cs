@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Sovereign.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Sovereign.Infrastructure.Persistence;
 namespace Sovereign.Infrastructure.Migrations
 {
     [DbContext(typeof(SovereignDbContext))]
-    partial class SovereignDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260307173551_Step10To14")]
+    partial class Step10To14
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
