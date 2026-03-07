@@ -11,15 +11,21 @@ public sealed class RelationshipsController : ControllerBase
     private readonly CreateRelationshipUseCase _createRelationshipUseCase;
     private readonly LogInteractionUseCase _logInteractionUseCase;
     private readonly GenerateStrategyUseCase _generateStrategyUseCase;
+    private readonly GetRelationshipTemperatureUseCase _getRelationshipTemperatureUseCase;
+    private readonly GetDecayAlertsUseCase _getDecayAlertsUseCase;
 
     public RelationshipsController(
         CreateRelationshipUseCase createRelationshipUseCase,
         LogInteractionUseCase logInteractionUseCase,
-        GenerateStrategyUseCase generateStrategyUseCase)
+        GenerateStrategyUseCase generateStrategyUseCase,
+        GetRelationshipTemperatureUseCase getRelationshipTemperatureUseCase,
+        GetDecayAlertsUseCase getDecayAlertsUseCase)
     {
         _createRelationshipUseCase = createRelationshipUseCase;
         _logInteractionUseCase = logInteractionUseCase;
         _generateStrategyUseCase = generateStrategyUseCase;
+        _getRelationshipTemperatureUseCase = getRelationshipTemperatureUseCase;
+        _getDecayAlertsUseCase = getDecayAlertsUseCase;
     }
 
     [HttpPost]
@@ -46,6 +52,24 @@ public sealed class RelationshipsController : ControllerBase
         CancellationToken ct)
     {
         var response = await _generateStrategyUseCase.ExecuteAsync(relationshipId, ct);
+        return Ok(response);
+    }
+
+    [HttpGet("{relationshipId:guid}/temperature")]
+    public async Task<ActionResult<RelationshipTemperatureResponse>> GetTemperature(
+        [FromRoute] Guid relationshipId,
+        CancellationToken ct)
+    {
+        var response = await _getRelationshipTemperatureUseCase.ExecuteAsync(relationshipId, ct);
+        return Ok(response);
+    }
+
+    [HttpGet("decay-alerts")]
+    public async Task<ActionResult<DecayAlertsResponse>> GetDecayAlerts(
+        [FromQuery] string userId,
+        CancellationToken ct)
+    {
+        var response = await _getDecayAlertsUseCase.ExecuteAsync(userId, ct);
         return Ok(response);
     }
 }

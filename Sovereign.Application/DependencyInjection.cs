@@ -23,10 +23,21 @@ public static class DependencyInjection
         services.AddScoped<UpsertSocialEdgeUseCase>();
         services.AddScoped<CaptureInfluenceSnapshotUseCase>();
 
+        services.AddScoped<RewriteMessageUseCase>();
+        services.AddScoped<GetRelationshipTemperatureUseCase>();
+        services.AddScoped<GetDecayAlertsUseCase>();
+
         services.AddScoped<IConversationContextAssembler, ConversationContextAssembler>();
         services.AddScoped<RelationshipDecayService>();
         services.AddScoped<SocialGraphScoringService>();
+        services.AddScoped<FollowUpSuggestionService>();
+        services.AddScoped<ToneCalibrationService>();
+
+        services.AddScoped<RelationshipTemperatureEngine>();
+        services.AddScoped<DecayScoringEngine>();
+        services.AddScoped<PromptComposer>();
         services.AddScoped<IToneAdjustmentStrategy, RuleBasedToneStrategy>();
+
         return services;
     }
 }

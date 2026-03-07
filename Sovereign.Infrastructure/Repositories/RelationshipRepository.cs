@@ -17,6 +17,12 @@ public sealed class RelationshipRepository : IRelationshipRepository
     public async Task<Relationship?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await _dbContext.Relationships.FirstOrDefaultAsync(x => x.Id == id, ct);
 
+    public async Task<IReadOnlyList<Relationship>> GetByUserIdAsync(string userId, CancellationToken ct = default)
+        => await _dbContext.Relationships
+            .Where(x => x.UserId == userId)
+            .OrderByDescending(x => x.LastInteractionAtUtc)
+            .ToListAsync(ct);
+
     public async Task AddAsync(Relationship relationship, CancellationToken ct = default)
         => await _dbContext.Relationships.AddAsync(relationship, ct);
 
