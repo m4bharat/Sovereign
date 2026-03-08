@@ -16,9 +16,26 @@ builder.Host.UseSerilog((context, loggerConfiguration) =>
         .Enrich.FromLogContext()
         .WriteTo.Console();
 });
+var allowedOrigins = new[]
+{
+    "http://localhost:4200",
+    "https://localhost:4200"
+};
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AngularDev", policy =>
+    {
+        policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddFluentValidationAutoValidation();
@@ -48,6 +65,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapHealthChecks("/health");
+app.UseCors("AngularDev");
 app.MapControllers();
 
 app.Run();
