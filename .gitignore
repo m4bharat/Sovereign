@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/Sovereign.UI/.angular/cache/21.2.1/sovereign-web-mvp/vite
+/Sovereign.UI/.angular/cache/21.2.1/sovereign-web-mvp
+*.json

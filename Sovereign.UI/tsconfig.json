@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "outDir": "./dist/out-tsc",
+    "strict": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "experimentalDecorators": true,
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "useDefineForClassFields": false,
+    "lib": ["ES2022", "DOM"]
+  },
+  "angularCompilerOptions": {
+    "strictTemplates": true
+  }
+}
