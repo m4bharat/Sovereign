@@ -1,5 +1,6 @@
 using Sovereign.Application;
 using Sovereign.Infrastructure;
+using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.DependencyInjection;
 
 namespace Sovereign.API.Extensions;
@@ -14,7 +15,10 @@ public static class ServiceCollectionExtensions
         services.AddApplication();
         services.AddInfrastructure(connectionString);
         services.AddSovereignIntelligence(configuration);
-
+        //services.AddHttpClient<ILlmClient>()
+        //                    .AddTransientHttpErrorPolicy(policy =>
+        //                        policy.WaitAndRetryAsync(3, retry =>
+        //                            TimeSpan.FromSeconds(Math.Pow(2, retry))));
         return services;
     }
 }
