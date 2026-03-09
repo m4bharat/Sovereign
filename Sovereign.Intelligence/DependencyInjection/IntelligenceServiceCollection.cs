@@ -19,16 +19,28 @@ public static class IntelligenceServiceCollection
         services.AddSingleton<IInteractionEngine, InteractionEngine>();
         services.AddSingleton<IAIStrategyService, AIStrategyService>();
 
-        services.Configure<LlmOptions>(configuration.GetSection("Llm"));
+       // services.Configure<LlmOptions>(configuration.GetSection("Llm"));
         services.AddSingleton<AiDecisionPromptBuilder>();
         services.AddSingleton<AiDecisionJsonParser>();
         services.AddScoped<IAiDecisionService, AiDecisionService>();
 
-        var provider = configuration.GetSection("Llm")["Provider"] ?? "OpenAI";
-        if (string.Equals(provider, "Local", StringComparison.OrdinalIgnoreCase))
-            services.AddScoped<ILlmClient, LocalLlmClient>();
-        else
-            services.AddHttpClient<ILlmClient, OpenAiLlmClient>();
+        services.Configure<LlmOptions>(configuration.GetSection("Llm"));
+        services.Configure<OpenAiOptions>(configuration.GetSection("OpenAI"));
+        services.Configure<OllamaOptions>(configuration.GetSection("Ollama"));
+
+        services.AddHttpClient<OpenAiLlmClient>();
+        services.AddHttpClient<OllamaLlmClient>();
+
+        services.AddScoped<ILlmClient>(sp =>
+        {
+            var llmOptions = configuration.GetSection("Llm").Get<LlmOptions>() ?? new LlmOptions();
+
+            return llmOptions.Provider.ToLowerInvariant() switch
+            {
+                "ollama" => sp.GetRequiredService<OllamaLlmClient>(),
+                _ => sp.GetRequiredService<OpenAiLlmClient>()
+            };
+        });
 
         return services;
     }
