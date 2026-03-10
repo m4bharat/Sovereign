@@ -20,7 +20,7 @@ public sealed class OllamaLlmClient : ILlmClient
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"{_options.BaseUrl.TrimEnd('/')}/generate");
+            $"{_options.BaseUrl.TrimEnd('/')}/chat");
 
         var payload = new
         {
