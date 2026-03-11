@@ -12,8 +12,8 @@ using Sovereign.Infrastructure.Persistence;
 namespace Sovereign.Infrastructure.Migrations
 {
     [DbContext(typeof(SovereignDbContext))]
-    [Migration("20260310185417_memory")]
-    partial class memory
+    [Migration("20260311180517_InitialHardening")]
+    partial class InitialHardening
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

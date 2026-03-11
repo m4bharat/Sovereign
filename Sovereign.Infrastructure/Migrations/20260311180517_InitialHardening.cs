@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Sovereign.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class Step10To14 : Migration
+    public partial class InitialHardening : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -71,6 +71,21 @@ namespace Sovereign.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "memory_entries",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    Key = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    Value = table.Column<string>(type: "character varying(2048)", maxLength: 2048, nullable: false),
+                    CreatedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_memory_entries", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "relationship_decay_alerts",
                 columns: table => new
                 {
@@ -82,6 +97,25 @@ namespace Sovereign.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_relationship_decay_alerts", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "relationships",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    ContactId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    Role = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    ReciprocityScore = table.Column<double>(type: "double precision", nullable: false),
+                    MomentumScore = table.Column<double>(type: "double precision", nullable: false),
+                    PowerDifferential = table.Column<double>(type: "double precision", nullable: false),
+                    EmotionalTemperature = table.Column<double>(type: "double precision", nullable: false),
+                    LastInteractionAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_relationships", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -137,9 +171,25 @@ namespace Sovereign.Infrastructure.Migrations
                 columns: new[] { "UserId", "CapturedAtUtc" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_memory_entries_UserId_Key",
+                table: "memory_entries",
+                columns: new[] { "UserId", "Key" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_relationship_decay_alerts_RelationshipId_TriggeredAtUtc",
                 table: "relationship_decay_alerts",
                 columns: new[] { "RelationshipId", "TriggeredAtUtc" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_relationships_LastInteractionAtUtc",
+                table: "relationships",
+                column: "LastInteractionAtUtc");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_relationships_UserId_ContactId",
+                table: "relationships",
+                columns: new[] { "UserId", "ContactId" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_social_edges_SourceUserId_TargetContactId",
@@ -170,7 +220,13 @@ namespace Sovereign.Infrastructure.Migrations
                 name: "influence_snapshots");
 
             migrationBuilder.DropTable(
+                name: "memory_entries");
+
+            migrationBuilder.DropTable(
                 name: "relationship_decay_alerts");
+
+            migrationBuilder.DropTable(
+                name: "relationships");
 
             migrationBuilder.DropTable(
                 name: "social_edges");
