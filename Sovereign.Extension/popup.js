@@ -1,11 +1,19 @@
-
-document.getElementById('rewrite').onclick=async()=>{
- const text=document.getElementById('input').value;
- const res=await fetch('http://localhost:5000/api/ai/rewrite',{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({message:text})
- });
- const data=await res.json().catch(()=>({}));
- document.getElementById('output').textContent=JSON.stringify(data,null,2);
+async function bootstrap() {
+  const settings = await chrome.storage.local.get(['sovereignApiBaseUrl','sovereignToken','sovereignUserId','sovereignContactId','sovereignRelationshipRole']);
+  document.getElementById('apiBaseUrl').value = settings.sovereignApiBaseUrl || 'https://localhost:5001';
+  document.getElementById('token').value = settings.sovereignToken || '';
+  document.getElementById('userId').value = settings.sovereignUserId || '';
+  document.getElementById('contactId').value = settings.sovereignContactId || 'linkedin-contact';
+  document.getElementById('relationshipRole').value = settings.sovereignRelationshipRole || 'Peer';
+}
+document.getElementById('save').onclick = async () => {
+  await chrome.storage.local.set({
+    sovereignApiBaseUrl: document.getElementById('apiBaseUrl').value.trim(),
+    sovereignToken: document.getElementById('token').value.trim(),
+    sovereignUserId: document.getElementById('userId').value.trim(),
+    sovereignContactId: document.getElementById('contactId').value.trim(),
+    sovereignRelationshipRole: document.getElementById('relationshipRole').value
+  });
+  document.getElementById('output').textContent = 'Saved.';
 };
+bootstrap();

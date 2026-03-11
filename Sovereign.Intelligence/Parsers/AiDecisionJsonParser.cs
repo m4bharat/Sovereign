@@ -18,13 +18,8 @@ public sealed class AiDecisionJsonParser
             if (start >= 0 && end > start)
                 trimmed = trimmed[start..(end + 1)];
 
-            var result = JsonSerializer.Deserialize<AiDecision>(trimmed,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-            if (result is null || string.IsNullOrWhiteSpace(result.Action))
-                return Fallback();
-
-            return result;
+            var result = JsonSerializer.Deserialize<AiDecision>(trimmed, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return Validate(result);
         }
         catch
         {
@@ -32,9 +27,33 @@ public sealed class AiDecisionJsonParser
         }
     }
 
+    private static AiDecision Validate(AiDecision? result)
+    {
+        if (result is null || string.IsNullOrWhiteSpace(result.Action) || !AiDecision.AllowedActions.Contains(result.Action))
+            return Fallback();
+
+        var confidence = Math.Clamp(result.Confidence, 0, 1);
+
+        return result.Action.ToLowerInvariant() switch
+        {
+            AiDecision.ReplyAction when string.IsNullOrWhiteSpace(result.Reply) => Fallback(),
+            AiDecision.SaveMemoryAction when string.IsNullOrWhiteSpace(result.MemoryKey) || string.IsNullOrWhiteSpace(result.MemoryValue) => Fallback(),
+            AiDecision.SummarizeAction when string.IsNullOrWhiteSpace(result.Summary) => Fallback(),
+            _ => new AiDecision
+            {
+                Action = result.Action.ToLowerInvariant(),
+                Reply = result.Reply?.Trim() ?? string.Empty,
+                MemoryKey = result.MemoryKey?.Trim() ?? string.Empty,
+                MemoryValue = result.MemoryValue?.Trim() ?? string.Empty,
+                Summary = result.Summary?.Trim() ?? string.Empty,
+                Confidence = confidence
+            }
+        };
+    }
+
     private static AiDecision Fallback() => new()
     {
-        Action = "no_action",
+        Action = AiDecision.NoAction,
         Reply = string.Empty,
         MemoryKey = string.Empty,
         MemoryValue = string.Empty,

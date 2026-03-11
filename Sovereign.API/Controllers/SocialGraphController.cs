@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sovereign.Application.DTOs;
 using Sovereign.Application.UseCases;
@@ -5,15 +6,14 @@ using Sovereign.Application.UseCases;
 namespace Sovereign.API.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/social-graph")]
 public sealed class SocialGraphController : ControllerBase
 {
     private readonly UpsertSocialEdgeUseCase _upsertSocialEdgeUseCase;
     private readonly CaptureInfluenceSnapshotUseCase _captureInfluenceSnapshotUseCase;
 
-    public SocialGraphController(
-        UpsertSocialEdgeUseCase upsertSocialEdgeUseCase,
-        CaptureInfluenceSnapshotUseCase captureInfluenceSnapshotUseCase)
+    public SocialGraphController(UpsertSocialEdgeUseCase upsertSocialEdgeUseCase, CaptureInfluenceSnapshotUseCase captureInfluenceSnapshotUseCase)
     {
         _upsertSocialEdgeUseCase = upsertSocialEdgeUseCase;
         _captureInfluenceSnapshotUseCase = captureInfluenceSnapshotUseCase;

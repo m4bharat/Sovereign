@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sovereign.Application.DTOs;
 using Sovereign.Application.UseCases;
@@ -5,6 +6,7 @@ using Sovereign.Application.UseCases;
 namespace Sovereign.API.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/ai/conversations")]
 public sealed class AiConversationController : ControllerBase
 {

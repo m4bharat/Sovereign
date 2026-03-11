@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Configuration;
 using Sovereign.Intelligence.Engines;
@@ -18,8 +19,6 @@ public static class IntelligenceServiceCollection
         services.AddSingleton<IRelationshipIntelligenceEngine, RelationshipIntelligenceEngine>();
         services.AddSingleton<IInteractionEngine, InteractionEngine>();
         services.AddSingleton<IAIStrategyService, AIStrategyService>();
-
-       // services.Configure<LlmOptions>(configuration.GetSection("Llm"));
         services.AddSingleton<AiDecisionPromptBuilder>();
         services.AddSingleton<AiDecisionJsonParser>();
         services.AddScoped<IAiDecisionService, AiDecisionService>();
@@ -28,17 +27,19 @@ public static class IntelligenceServiceCollection
         services.Configure<OpenAiOptions>(configuration.GetSection("OpenAI"));
         services.Configure<OllamaOptions>(configuration.GetSection("Ollama"));
 
+        services.AddSingleton<LocalLlmClient>();
         services.AddHttpClient<OpenAiLlmClient>();
         services.AddHttpClient<OllamaLlmClient>();
 
         services.AddScoped<ILlmClient>(sp =>
         {
-            var llmOptions = configuration.GetSection("Llm").Get<LlmOptions>() ?? new LlmOptions();
-
+            var llmOptions = sp.GetRequiredService<IOptions<LlmOptions>>().Value;
             return llmOptions.Provider.ToLowerInvariant() switch
             {
+                "local" => sp.GetRequiredService<LocalLlmClient>(),
                 "ollama" => sp.GetRequiredService<OllamaLlmClient>(),
-                _ => sp.GetRequiredService<OpenAiLlmClient>()
+                "openai" => sp.GetRequiredService<OpenAiLlmClient>(),
+                _ => throw new InvalidOperationException($"Unsupported LLM provider: {llmOptions.Provider}")
             };
         });
 

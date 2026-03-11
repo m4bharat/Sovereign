@@ -1,7 +1,8 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DecayRadarFacade } from './decay-radar.facade';
+import { SessionService } from '../../core/services/session.service';
 
 @Component({
   standalone: true,
@@ -10,7 +11,8 @@ import { DecayRadarFacade } from './decay-radar.facade';
   templateUrl: './decay-radar-page.component.html'
 })
 export class DecayRadarPageComponent {
-  userId = 'user-001';
+  readonly session = inject(SessionService);
+  userId = this.session.userId() || 'user-001';
 
   constructor(public readonly facade: DecayRadarFacade) {}
 

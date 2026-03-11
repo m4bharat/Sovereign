@@ -1,0 +1,45 @@
+<section class="hero">
+  <h1>Sovereign dashboard</h1>
+  <p>Operational view of relationship momentum, open decay alerts, and durable memory.</p>
+  <div class="row">
+    <button class="btn" (click)="load()" [disabled]="loading()">Load dashboard</button>
+    <span class="muted">Signed in user: {{ session.email() || 'none' }}</span>
+  </div>
+  <div class="muted" *ngIf="error()">{{ error() }}</div>
+</section>
+
+<div class="empty" *ngIf="!overview() && !loading()">No dashboard loaded yet.</div>
+<div class="muted" *ngIf="loading()">Loading dashboard...</div>
+
+<ng-container *ngIf="overview() as vm">
+  <section class="grid three">
+    <div class="card"><div class="muted">Relationships</div><div class="kpi">{{ vm.relationshipCount }}</div></div>
+    <div class="card"><div class="muted">Decay Alerts</div><div class="kpi">{{ vm.openDecayAlerts }}</div></div>
+    <div class="card"><div class="muted">Memory Entries</div><div class="kpi">{{ vm.memoryCount }}</div></div>
+    <div class="card"><div class="muted">Hot</div><div class="kpi">{{ vm.hotRelationships }}</div></div>
+    <div class="card"><div class="muted">Warm</div><div class="kpi">{{ vm.warmRelationships }}</div></div>
+    <div class="card"><div class="muted">Cold</div><div class="kpi">{{ vm.coldRelationships }}</div></div>
+  </section>
+
+  <section class="grid two" style="margin-top:20px">
+    <div class="card stack">
+      <h3>Priority follow-ups</h3>
+      <div class="empty" *ngIf="!vm.priorityAlerts.length">No alerts.</div>
+      <div class="card stack" *ngFor="let alert of vm.priorityAlerts">
+        <strong>{{ alert.contactId }}</strong>
+        <div class="muted">{{ alert.suggestedAction }} · {{ alert.daysSilent }} days silent · score {{ alert.decayScore }}</div>
+        <div class="result">{{ alert.suggestedMessage }}</div>
+      </div>
+    </div>
+
+    <div class="card stack">
+      <h3>Recent memories</h3>
+      <div class="empty" *ngIf="!vm.recentMemories.length">No memories saved yet.</div>
+      <div class="card stack" *ngFor="let memory of vm.recentMemories">
+        <strong>{{ memory.key }}</strong>
+        <div>{{ memory.value }}</div>
+        <div class="muted">{{ memory.createdAtUtc }}</div>
+      </div>
+    </div>
+  </section>
+</ng-container>

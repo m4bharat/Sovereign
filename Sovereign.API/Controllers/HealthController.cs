@@ -1,11 +1,13 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Sovereign.API.Controllers;
 
 [ApiController]
-[Route("health")]
+[AllowAnonymous]
+[Route("api/health")]
 public sealed class HealthController : ControllerBase
 {
     [HttpGet]
-    public IActionResult Get() => Ok(new { status = "ok" });
+    public IActionResult Get() => Ok(new { status = "ok", utc = DateTime.UtcNow });
 }

@@ -1,7 +1,8 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AssistantFacade } from './assistant.facade';
+import { SessionService } from '../../core/services/session.service';
 import { ROLES } from '../../core/constants/options';
 import { AiConversationDecisionRequest } from '../../core/models/assistant.models';
 
@@ -15,13 +16,17 @@ export class AssistantPageComponent {
   readonly roles = ROLES;
 
   readonly form: AiConversationDecisionRequest = {
-    userId: 'user-001',
+    userId: '',
     contactId: 'contact-001',
     relationshipRole: 'Friend',
     message: 'Remember that my birthday is Jan 10'
   };
 
-  constructor(public readonly facade: AssistantFacade) {}
+  readonly session = inject(SessionService);
+
+  constructor(public readonly facade: AssistantFacade) {
+    this.form.userId = this.session.userId() || 'user-001';
+  }
 
   run(): void {
     this.facade.run({ ...this.form });

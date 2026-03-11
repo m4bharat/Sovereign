@@ -1,9 +1,10 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RelationshipsFacade } from './relationships.facade';
 import { ROLES } from '../../core/constants/options';
 import { CreateRelationshipRequest } from '../../core/models/relationship.models';
+import { SessionService } from '../../core/services/session.service';
 
 @Component({
   standalone: true,
@@ -15,12 +16,16 @@ export class RelationshipsPageComponent {
   readonly roles = ROLES;
 
   readonly form: CreateRelationshipRequest = {
-    userId: 'user-001',
+    userId: '',
     contactId: 'contact-001',
     role: 'Investor'
   };
 
-  constructor(public readonly facade: RelationshipsFacade) {}
+  readonly session = inject(SessionService);
+
+  constructor(public readonly facade: RelationshipsFacade) {
+    this.form.userId = this.session.userId() || 'user-001';
+  }
 
   create(): void {
     this.facade.createRelationship({ ...this.form });

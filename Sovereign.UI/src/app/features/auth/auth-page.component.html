@@ -1,0 +1,26 @@
+<section class="hero">
+  <h1>Authentication</h1>
+  <p>Register or sign in to use the protected Sovereign API and Chrome extension.</p>
+</section>
+
+<section class="grid two">
+  <div class="card stack">
+    <div class="field"><label>Email</label><input [ngModel]="email()" (ngModelChange)="email.set($event)"></div>
+    <div class="field"><label>Password</label><input type="password" [ngModel]="password()" (ngModelChange)="password.set($event)"></div>
+    <div class="field"><label>Tenant</label><input [ngModel]="tenantId()" (ngModelChange)="tenantId.set($event)"></div>
+    <div class="row">
+      <button class="btn" (click)="register()" [disabled]="loading()">Register</button>
+      <button class="btn secondary" (click)="login()" [disabled]="loading()">Login</button>
+      <button class="btn ghost" (click)="logout()">Logout</button>
+    </div>
+    <div class="muted">{{ message() }}</div>
+  </div>
+
+  <div class="card stack">
+    <h3>Session</h3>
+    <div><span class="muted">Authenticated</span><div>{{ session.isAuthenticated() ? 'Yes' : 'No' }}</div></div>
+    <div><span class="muted">User ID</span><div>{{ session.userId() || '—' }}</div></div>
+    <div><span class="muted">Email</span><div>{{ session.email() || '—' }}</div></div>
+    <div><span class="muted">Tenant</span><div>{{ session.tenantId() || '—' }}</div></div>
+  </div>
+</section>

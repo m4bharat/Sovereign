@@ -2,6 +2,7 @@ using Sovereign.Application.DTOs;
 using Sovereign.Application.Interfaces;
 using Sovereign.Application.Services;
 using Sovereign.Domain.Entities;
+using Sovereign.Intelligence.Models;
 using Sovereign.Intelligence.Services;
 
 namespace Sovereign.Application.UseCases;
@@ -12,10 +13,7 @@ public sealed class ProcessAiMessageWithContextUseCase
     private readonly IMemoryRepository _memoryRepository;
     private readonly IConversationContextAssembler _contextAssembler;
 
-    public ProcessAiMessageWithContextUseCase(
-        IAiDecisionService aiDecisionService,
-        IMemoryRepository memoryRepository,
-        IConversationContextAssembler contextAssembler)
+    public ProcessAiMessageWithContextUseCase(IAiDecisionService aiDecisionService, IMemoryRepository memoryRepository, IConversationContextAssembler contextAssembler)
     {
         _aiDecisionService = aiDecisionService;
         _memoryRepository = memoryRepository;
@@ -26,15 +24,7 @@ public sealed class ProcessAiMessageWithContextUseCase
     {
         var context = await _contextAssembler.AssembleAsync(request, ct);
         var decision = await _aiDecisionService.DecideAsync(context, ct);
-
-        if (string.Equals(decision.Action, "save_memory", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(decision.MemoryKey)
-            && !string.IsNullOrWhiteSpace(decision.MemoryValue))
-        {
-            var memory = new MemoryEntry(Guid.NewGuid(), request.UserId, decision.MemoryKey, decision.MemoryValue);
-            await _memoryRepository.AddAsync(memory, ct);
-            await _memoryRepository.SaveChangesAsync(ct);
-        }
+        await PersistMemoryIfEligibleAsync(request.UserId, decision, ct);
 
         return new AiDecisionResponse
         {
@@ -45,5 +35,19 @@ public sealed class ProcessAiMessageWithContextUseCase
             Summary = decision.Summary,
             Confidence = decision.Confidence
         };
+    }
+
+    private async Task PersistMemoryIfEligibleAsync(string userId, AiDecision decision, CancellationToken ct)
+    {
+        if (!string.Equals(decision.Action, AiDecision.SaveMemoryAction, StringComparison.OrdinalIgnoreCase) || decision.Confidence < 0.80)
+            return;
+        if (string.IsNullOrWhiteSpace(decision.MemoryKey) || string.IsNullOrWhiteSpace(decision.MemoryValue))
+            return;
+        if (await _memoryRepository.FindExactAsync(userId, decision.MemoryKey, decision.MemoryValue, ct) is not null)
+            return;
+
+        var memory = new MemoryEntry(Guid.NewGuid(), userId, decision.MemoryKey, decision.MemoryValue);
+        await _memoryRepository.AddAsync(memory, ct);
+        await _memoryRepository.SaveChangesAsync(ct);
     }
 }
