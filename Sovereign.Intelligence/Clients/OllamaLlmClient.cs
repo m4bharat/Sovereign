@@ -25,7 +25,9 @@ public sealed class OllamaLlmClient : ILlmClient
             using var request = new HttpRequestMessage(
                 HttpMethod.Post,
                 $"{_options.BaseUrl.TrimEnd('/')}/chat");
-
+            // --- ADD THIS LINE FOR CLOUD AUTHENTICATION ---
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ApiKey);
+            // ----------------------------------------------
             var payload = new
             {
                 model = _options.Model,

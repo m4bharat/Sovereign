@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Models;
@@ -8,10 +9,23 @@ namespace Sovereign.Intelligence.Services;
 
 public sealed class AiDecisionService : IAiDecisionService
 {
+    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "the","a","an","and","or","but","if","then","than","that","this","those","these","to","for","from","of","in","on","at","with",
+        "is","are","was","were","be","been","being","as","by","it","its","into","about","your","you","their","they","them","we","our",
+        "i","me","my","mine","his","her","hers","he","she","him","not","just","more","most","very","really","truly","new","role"
+    };
+
     private readonly ILlmClient _llmClient;
     private readonly AiDecisionPromptBuilder _promptBuilder;
     private readonly AiDecisionJsonParser _parser;
     private readonly ILogger<AiDecisionService> _logger;
+
+    private readonly SocialSituationDetector _situationDetector = new();
+    private readonly SocialMovePlanner _movePlanner = new();
+    private readonly CandidateReplyGenerator _candidateReplyGenerator = new();
+    private readonly CandidateScoringEngine _candidateScoringEngine = new();
+    private readonly WinnerSelectionEngine _winnerSelectionEngine = new();
 
     public AiDecisionService(
         ILlmClient llmClient,
@@ -34,133 +48,184 @@ public sealed class AiDecisionService : IAiDecisionService
             var raw = await _llmClient.CompleteAsync(prompt, ct);
             var parsed = _parser.Parse(raw);
 
-            if (IsWeakResult(parsed))
+            if (ShouldAcceptLlmReply(context, parsed))
             {
-                var fallback = BuildDeterministicFallback(context);
                 _logger.LogInformation(
-                    "AI decision returned weak output for user {UserId} contact {ContactId}; using deterministic fallback action {Action}.",
-                    SafeGet(context, "UserId"),
-                    SafeGet(context, "ContactId"),
-                    fallback.Action);
+                    "Accepted LLM reply for user {UserId} contact {ContactId} with action {Action} and confidence {Confidence}.",
+                    context.UserId,
+                    context.ContactId,
+                    parsed.Action,
+                    parsed.Confidence);
 
-                return fallback;
+                return parsed;
             }
 
             _logger.LogInformation(
-                "AI decision completed for user {UserId} contact {ContactId} with action {Action} and confidence {Confidence}.",
-                SafeGet(context, "UserId"),
-                SafeGet(context, "ContactId"),
-                parsed.Action,
-                parsed.Confidence);
+                "LLM output rejected for user {UserId} contact {ContactId}; using move-scoring rescue path.",
+                context.UserId,
+                context.ContactId);
 
-            return parsed;
+            return BuildDecisionFromScoredCandidates(context);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
-                "AI decision failed for user {UserId} contact {ContactId}; returning deterministic fallback.",
-                SafeGet(context, "UserId"),
-                SafeGet(context, "ContactId"));
+                "AI decision failed for user {UserId} contact {ContactId}; using move-scoring rescue path.",
+                context.UserId,
+                context.ContactId);
 
-            return BuildDeterministicFallback(context);
+            return BuildDecisionFromScoredCandidates(context);
         }
     }
 
-    private static bool IsWeakResult(AiDecision decision)
+    private AiDecision BuildDecisionFromScoredCandidates(MessageContext context)
     {
-        var placeholderSummary =
-            "Conversation summary requested. Local mode cannot generate a richer summary yet.";
+        var situation = _situationDetector.Detect(context);
+        var plannedMoves = _movePlanner.Plan(situation);
+        var generatedCandidates = _candidateReplyGenerator.Generate(context, plannedMoves, situation);
+        var scoredCandidates = _candidateScoringEngine.Score(context, situation, generatedCandidates);
+        var winner = _winnerSelectionEngine.SelectBest(scoredCandidates);
 
-        return string.Equals(decision.Summary?.Trim(), placeholderSummary, StringComparison.OrdinalIgnoreCase) ||
-               (string.IsNullOrWhiteSpace(decision.Reply) && string.IsNullOrWhiteSpace(decision.Summary)) ||
-               (string.Equals(decision.Action, AiDecision.SummarizeAction, StringComparison.OrdinalIgnoreCase)
-                   && string.IsNullOrWhiteSpace(decision.Reply));
-    }
+        var winningScore = scoredCandidates
+            .Where(x => ReferenceEquals(x.Candidate, winner) || x.Candidate.Reply == winner.Reply)
+            .OrderByDescending(x => x.Total)
+            .Select(x => x.Total)
+            .FirstOrDefault();
 
-    private static AiDecision BuildDeterministicFallback(MessageContext context)
-    {
-        var input = ExtractMessage(context);
-        var platform = SafeGet(context, "Platform", "LinkedIn");
-        var relationshipRole = SafeGet(context, "RelationshipRole", "Peer");
-
-        if (LooksLikeSummaryRequest(input))
-        {
-            return new AiDecision
-            {
-                Action = AiDecision.SummarizeAction,
-                Summary = BuildSummary(input),
-                Confidence = 0.64
-            };
-        }
+        _logger.LogInformation(
+            "Move scoring selected move {Move} for user {UserId} contact {ContactId} situation {Situation} with score {Score}.",
+            winner.Move,
+            context.UserId,
+            context.ContactId,
+            situation.Type,
+            winningScore);
 
         return new AiDecision
         {
             Action = AiDecision.ReplyAction,
-            Reply = BuildRewrite(input, platform, relationshipRole),
-            Summary = string.Empty,
-            Confidence = 0.74
+            Reply = winner.Reply,
+            Confidence = winningScore > 0 ? winningScore : 0.66
         };
     }
 
-    private static bool LooksLikeSummaryRequest(string input)
+    private bool ShouldAcceptLlmReply(MessageContext context, AiDecision candidate)
     {
-        var text = input.ToLowerInvariant();
-        return text.Contains("summarize") ||
-               text.Contains("summary") ||
-               text.Contains("recap");
+        if (!string.Equals(candidate.Action, AiDecision.ReplyAction, StringComparison.OrdinalIgnoreCase))
+        {
+            return !string.Equals(context.InteractionMode, "reply", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate.Reply))
+        {
+            return false;
+        }
+
+        if (!string.Equals(context.InteractionMode, "reply", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (IsMetaFeedback(candidate.Reply))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(context.SourceText))
+        {
+            return true;
+        }
+
+        return IsGroundedReply(context, candidate.Reply);
     }
 
-    private static string BuildSummary(string input)
+    private bool IsGroundedReply(MessageContext context, string reply)
     {
-        if (string.IsNullOrWhiteSpace(input))
+        var source = string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.SourceAuthor ?? string.Empty,
+            context.SourceTitle ?? string.Empty,
+            context.Message ?? string.Empty);
+
+        var sourceTokens = Tokenize(source);
+        var replyTokens = Tokenize(reply);
+
+        if (replyTokens.Count == 0)
         {
-            return "No content was provided to summarize.";
+            return false;
         }
 
-        var trimmed = input.Trim();
-        return trimmed.Length <= 220
-            ? trimmed
-            : trimmed[..220].TrimEnd() + "...";
+        var overlap = replyTokens.Count(token => sourceTokens.Contains(token));
+        var overlapRatio = overlap / (double)replyTokens.Count;
+
+        var suspiciousTerms = ExtractSuspiciousCapitalizedTerms(reply)
+            .Where(term => !ContainsTerm(source, term))
+            .ToArray();
+
+        var mentionsAuthor = !string.IsNullOrWhiteSpace(context.SourceAuthor) &&
+                             ContainsTerm(reply, context.SourceAuthor);
+
+        if (suspiciousTerms.Length >= 2)
+        {
+            return false;
+        }
+
+        if (overlapRatio >= 0.18)
+        {
+            return true;
+        }
+
+        if (mentionsAuthor && overlapRatio >= 0.10)
+        {
+            return true;
+        }
+
+        return false;
     }
 
-    private static string BuildRewrite(string input, string platform, string relationshipRole)
+    private static bool IsMetaFeedback(string reply)
     {
-        if (string.IsNullOrWhiteSpace(input))
+        var patterns = new[]
         {
-            return "Strong point. The key is to focus on clear value, practical execution, and real-world impact.";
-        }
+            "this is a strong start",
+            "you could improve",
+            "consider adding",
+            "make it more engaging",
+            "you should add",
+            "try to include",
+            "to improve this post",
+            "for linkedin, could you",
+            "this post would be stronger",
+            "add a specific example"
+        };
 
-        var cleaned = input.Trim();
-
-        if (string.Equals(platform, "LinkedIn", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"Strong point. {cleaned} The real advantage comes from embedding intelligence into the workflow so the product becomes genuinely useful in day-to-day execution.";
-        }
-
-        if (string.Equals(relationshipRole, "Peer", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"That makes sense. {cleaned} I’d frame it in a way that is direct, clear, and easy for the other person to respond to.";
-        }
-
-        return $"Here’s a stronger version: {cleaned}";
+        return patterns.Any(pattern =>
+            reply.Contains(pattern, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string ExtractMessage(MessageContext context)
+    private static HashSet<string> Tokenize(string text)
     {
-        var explicitMessage = SafeGet(context, "Message");
-        if (!string.IsNullOrWhiteSpace(explicitMessage))
-        {
-            return explicitMessage;
-        }
-
-        return SafeGet(context, "RawInput");
+        return Regex.Matches(text.ToLowerInvariant(), "[a-z0-9]+")
+            .Select(m => m.Value)
+            .Where(token => token.Length > 2 && !StopWords.Contains(token))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string SafeGet(object target, string propertyName, string fallback = "")
+    private static IEnumerable<string> ExtractSuspiciousCapitalizedTerms(string text)
     {
-        var property = target.GetType().GetProperty(propertyName);
-        var value = property?.GetValue(target);
-        return value?.ToString() ?? fallback;
+        return Regex.Matches(text, "\b[A-Z][a-zA-Z]{2,}\b")
+            .Select(m => m.Value)
+            .Where(term => !StopWords.Contains(term))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsTerm(string haystack, string needle)
+    {
+        if (string.IsNullOrWhiteSpace(haystack) || string.IsNullOrWhiteSpace(needle))
+        {
+            return false;
+        }
+
+        return haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
     }
 }
