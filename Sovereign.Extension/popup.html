@@ -1,31 +1,84 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>Sovereign AI</title>
-  <style>
-    body{font-family:Arial,sans-serif;padding:12px;width:320px;background:#0f172a;color:#fff}
-    input,select,button{width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #334155;background:#111827;color:#fff}
-    button{background:#60a5fa;color:#0f172a;font-weight:700;cursor:pointer}
-    small{color:#94a3b8}
-  </style>
+    <meta charset="utf-8" />
+    <title>Sovereign Settings</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            width: 340px;
+            padding: 14px;
+            margin: 0;
+            background: #f8fafc;
+        }
+
+        h1 {
+            font-size: 16px;
+            margin: 0 0 12px;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 10px 0 4px;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 13px;
+            background: white;
+        }
+
+        textarea {
+            min-height: 72px;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 14px;
+            width: 100%;
+            padding: 10px 12px;
+            border: none;
+            border-radius: 999px;
+            background: #0a66c2;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #0f172a;
+        }
+    </style>
 </head>
 <body>
-  <h3>Sovereign AI</h3>
-  <small>Configure API + auth for LinkedIn suggestions.</small>
-  <input id="apiBaseUrl" placeholder="API Base URL">
-  <input id="token" placeholder="JWT token">
-  <input id="userId" placeholder="User ID">
-  <input id="contactId" placeholder="Default contact ID">
-  <select id="relationshipRole">
-    <option>Peer</option>
-    <option>Investor</option>
-    <option>Lead</option>
-    <option>Mentor</option>
-    <option>Friend</option>
-  </select>
-  <button id="save">Save settings</button>
-  <pre id="output"></pre>
-  <script src="popup.js"></script>
+    <h1>Sovereign Settings</h1>
+
+    <label for="apiBaseUrl">API Base URL</label>
+    <input id="apiBaseUrl" placeholder="https://localhost:55270" />
+
+    <label for="token">JWT Bearer Token</label>
+    <textarea id="token" placeholder="Paste raw JWT token here"></textarea>
+
+    <label for="userId">User ID</label>
+    <input id="userId" placeholder="user-001" />
+
+    <label for="contactId">Contact ID</label>
+    <input id="contactId" placeholder="linkedin-contact" />
+
+    <label for="relationshipRole">Relationship Role</label>
+    <input id="relationshipRole" placeholder="Peer" />
+
+    <button id="saveBtn">Save Settings</button>
+    <div class="status" id="status"></div>
+
+    <script src="popup.js"></script>
 </body>
 </html>

@@ -1,19 +1,54 @@
-async function bootstrap() {
-  const settings = await chrome.storage.local.get(['sovereignApiBaseUrl','sovereignToken','sovereignUserId','sovereignContactId','sovereignRelationshipRole']);
-  document.getElementById('apiBaseUrl').value = settings.sovereignApiBaseUrl || 'https://localhost:5001';
-  document.getElementById('token').value = settings.sovereignToken || '';
-  document.getElementById('userId').value = settings.sovereignUserId || '';
-  document.getElementById('contactId').value = settings.sovereignContactId || 'linkedin-contact';
-  document.getElementById('relationshipRole').value = settings.sovereignRelationshipRole || 'Peer';
+function $(id) {
+    return document.getElementById(id);
 }
-document.getElementById('save').onclick = async () => {
-  await chrome.storage.local.set({
-    sovereignApiBaseUrl: document.getElementById('apiBaseUrl').value.trim(),
-    sovereignToken: document.getElementById('token').value.trim(),
-    sovereignUserId: document.getElementById('userId').value.trim(),
-    sovereignContactId: document.getElementById('contactId').value.trim(),
-    sovereignRelationshipRole: document.getElementById('relationshipRole').value
-  });
-  document.getElementById('output').textContent = 'Saved.';
-};
-bootstrap();
+
+function setStatus(message) {
+    $("status").textContent = message;
+}
+
+function loadSettings() {
+    chrome.runtime.sendMessage({ type: "SOVEREIGN_GET_SETTINGS" }, response => {
+        if (!response?.ok) {
+            setStatus(response?.error || "Failed to load settings.");
+            return;
+        }
+
+        const data = response.data || {};
+
+        $("apiBaseUrl").value = data.sovereignApiBaseUrl || "";
+        $("token").value = data.sovereignToken || "";
+        $("userId").value = data.sovereignUserId || "";
+        $("contactId").value = data.sovereignContactId || "";
+        $("relationshipRole").value = data.sovereignRelationshipRole || "";
+    });
+}
+
+function saveSettings() {
+    const payload = {
+        sovereignApiBaseUrl: $("apiBaseUrl").value.trim(),
+        sovereignToken: $("token").value.trim(),
+        sovereignUserId: $("userId").value.trim(),
+        sovereignContactId: $("contactId").value.trim(),
+        sovereignRelationshipRole: $("relationshipRole").value.trim()
+    };
+
+    chrome.runtime.sendMessage(
+        {
+            type: "SOVEREIGN_SAVE_SETTINGS",
+            payload
+        },
+        response => {
+            if (!response?.ok) {
+                setStatus(response?.error || "Failed to save settings.");
+                return;
+            }
+
+            setStatus("Settings saved.");
+        }
+    );
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    loadSettings();
+    $("saveBtn").addEventListener("click", saveSettings);
+});

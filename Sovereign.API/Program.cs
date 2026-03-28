@@ -1,7 +1,7 @@
 using FluentValidation;
-using System.Text;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -11,7 +11,9 @@ using Sovereign.API.Workers;
 using Sovereign.Application;
 using Sovereign.Application.Interfaces;
 using Sovereign.Infrastructure;
+using Sovereign.Infrastructure.Persistence;
 using Sovereign.Intelligence.DependencyInjection;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -97,6 +99,11 @@ builder.Services.AddSovereignIntelligence(builder.Configuration);
 builder.Services.AddHostedService<DecayWorker>();
 
 var app = builder.Build();
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<SovereignDbContext>();
+    db.Database.Migrate();
+}
 app.UseCors("ClientApps");
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
