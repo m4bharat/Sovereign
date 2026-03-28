@@ -27,15 +27,8 @@ function insertTextIntoComposer(text) {
     if (!target) return false;
 
     target.focus();
-
-    if (document.execCommand) {
-        target.innerHTML = "";
-        document.execCommand("insertText", false, text);
-        return true;
-    }
-
-    target.textContent = text;
-    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.innerHTML = "";
+    document.execCommand("insertText", false, text);
     return true;
 }
 
@@ -97,18 +90,20 @@ function createButton() {
                     return;
                 }
 
-                const suggestion = response?.data?.reply;
+                const suggestion =
+                    response?.data?.reply?.trim() ||
+                    response?.data?.summary?.trim();
 
                 if (!suggestion) {
                     console.error("Unexpected Sovereign success response:", response);
-                    alert("Sovereign returned no reply.");
+                    alert("Sovereign returned no usable text.");
                     return;
                 }
 
                 const inserted = insertTextIntoComposer(suggestion);
 
                 if (!inserted) {
-                    alert("Sovereign generated a reply, but could not insert it into the composer.");
+                    alert("Sovereign generated text, but could not insert it into the composer.");
                 }
             }
         );

@@ -29,15 +29,20 @@ async function getSettings() {
 }
 
 async function callDecisionEndpoint(settings, payload) {
-    const apiBaseUrl = settings.sovereignApiBaseUrl || DEFAULTS.sovereignApiBaseUrl;
-    const token = settings.sovereignToken || "";
+    const apiBaseUrl = (settings.sovereignApiBaseUrl || DEFAULTS.sovereignApiBaseUrl).trim();
+    const token = (settings.sovereignToken || "").trim();
 
     const requestBody = {
-        userId: settings.sovereignUserId || DEFAULTS.sovereignUserId,
-        contactId: settings.sovereignContactId || DEFAULTS.sovereignContactId,
-        relationshipRole: settings.sovereignRelationshipRole || DEFAULTS.sovereignRelationshipRole,
+        userId: (settings.sovereignUserId || DEFAULTS.sovereignUserId).trim(),
+        contactId: (settings.sovereignContactId || DEFAULTS.sovereignContactId).trim(),
+        relationshipRole: (settings.sovereignRelationshipRole || DEFAULTS.sovereignRelationshipRole).trim(),
         message: payload?.message || ""
     };
+
+    console.log("Sovereign API Base URL:", apiBaseUrl);
+    console.log("Sovereign token present:", !!token);
+    console.log("Sovereign token preview:", token ? token.substring(0, 20) + "..." : "(empty)");
+    console.log("Sovereign request body:", requestBody);
 
     const response = await fetch(`${apiBaseUrl}/api/ai/conversations/decide`, {
         method: "POST",
@@ -49,6 +54,9 @@ async function callDecisionEndpoint(settings, payload) {
     });
 
     const rawText = await response.text();
+
+    console.log("Sovereign status:", response.status);
+    console.log("Sovereign raw response:", rawText);
 
     let data = null;
     try {
@@ -73,6 +81,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(settings => callDecisionEndpoint(settings, message.payload))
             .then(result => sendResponse(result))
             .catch(error => {
+                console.error("Sovereign background error:", error);
                 sendResponse({
                     ok: false,
                     status: 0,
@@ -93,11 +102,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "SOVEREIGN_SAVE_SETTINGS") {
         chrome.storage.local.set({
-            sovereignApiBaseUrl: message.payload?.sovereignApiBaseUrl || DEFAULTS.sovereignApiBaseUrl,
-            sovereignToken: message.payload?.sovereignToken || "",
-            sovereignUserId: message.payload?.sovereignUserId || DEFAULTS.sovereignUserId,
-            sovereignContactId: message.payload?.sovereignContactId || DEFAULTS.sovereignContactId,
-            sovereignRelationshipRole: message.payload?.sovereignRelationshipRole || DEFAULTS.sovereignRelationshipRole
+            sovereignApiBaseUrl: (message.payload?.sovereignApiBaseUrl || DEFAULTS.sovereignApiBaseUrl).trim(),
+            sovereignToken: (message.payload?.sovereignToken || "").trim(),
+            sovereignUserId: (message.payload?.sovereignUserId || DEFAULTS.sovereignUserId).trim(),
+            sovereignContactId: (message.payload?.sovereignContactId || DEFAULTS.sovereignContactId).trim(),
+            sovereignRelationshipRole: (message.payload?.sovereignRelationshipRole || DEFAULTS.sovereignRelationshipRole).trim()
         }, () => {
             if (chrome.runtime.lastError) {
                 sendResponse({
