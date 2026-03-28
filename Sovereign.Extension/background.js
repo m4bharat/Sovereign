@@ -1,9 +1,9 @@
 const DEFAULTS = {
-  sovereignApiBaseUrl: "https://localhost:55270",
-  sovereignToken: "",
-  sovereignUserId: "user-001",
-  sovereignContactId: "linkedin-contact",
-  sovereignRelationshipRole: "Peer"
+  sovereignApiBaseUrl: 'https://localhost:55270',
+  sovereignToken: '',
+  sovereignUserId: 'user-001',
+  sovereignContactId: 'generic-contact',
+  sovereignRelationshipRole: 'Peer'
 };
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -20,29 +20,38 @@ chrome.runtime.onInstalled.addListener(() => {
 
 async function getSettings() {
   return await chrome.storage.local.get([
-    "sovereignApiBaseUrl",
-    "sovereignToken",
-    "sovereignUserId",
-    "sovereignContactId",
-    "sovereignRelationshipRole"
+    'sovereignApiBaseUrl',
+    'sovereignToken',
+    'sovereignUserId',
+    'sovereignContactId',
+    'sovereignRelationshipRole'
   ]);
 }
 
 async function callDecisionEndpoint(settings, payload) {
   const apiBaseUrl = (settings.sovereignApiBaseUrl || DEFAULTS.sovereignApiBaseUrl).trim();
-  const token = (settings.sovereignToken || "").trim();
+  const token = (settings.sovereignToken || '').trim();
 
   const requestBody = {
     userId: (settings.sovereignUserId || DEFAULTS.sovereignUserId).trim(),
-    contactId: (settings.sovereignContactId || DEFAULTS.sovereignContactId).trim(),
-    relationshipRole: (settings.sovereignRelationshipRole || DEFAULTS.sovereignRelationshipRole).trim(),
-    message: payload?.message || ""
+    contactId: (payload?.contactId || settings.sovereignContactId || DEFAULTS.sovereignContactId).trim(),
+    relationshipRole: (payload?.relationshipRole || settings.sovereignRelationshipRole || DEFAULTS.sovereignRelationshipRole).trim(),
+    message: payload?.message || '',
+    platform: payload?.platform || '',
+    surface: payload?.surface || '',
+    currentUrl: payload?.currentUrl || '',
+    sourceAuthor: payload?.sourceAuthor || '',
+    sourceTitle: payload?.sourceTitle || '',
+    sourceText: payload?.sourceText || '',
+    parentContextText: payload?.parentContextText || '',
+    nearbyContextText: payload?.nearbyContextText || '',
+    interactionMetadata: payload?.interactionMetadata || {}
   };
 
   const response = await fetch(`${apiBaseUrl}/api/ai/conversations/decide`, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(requestBody)
@@ -68,50 +77,20 @@ async function callDecisionEndpoint(settings, payload) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "SOVEREIGN_DECIDE") {
-    getSettings()
-      .then(settings => callDecisionEndpoint(settings, message.payload))
-      .then(result => sendResponse(result))
-      .catch(error => {
-        sendResponse({
-          ok: false,
-          status: 0,
-          error: String(error)
-        });
+  if (message?.type !== 'SOVEREIGN_DECIDE') {
+    return false;
+  }
+
+  getSettings()
+    .then(settings => callDecisionEndpoint(settings, message.payload))
+    .then(result => sendResponse(result))
+    .catch(error => {
+      sendResponse({
+        ok: false,
+        status: 0,
+        error: String(error)
       });
-
-    return true;
-  }
-
-  if (message?.type === "SOVEREIGN_GET_SETTINGS") {
-    getSettings()
-      .then(settings => sendResponse({ ok: true, data: settings }))
-      .catch(error => sendResponse({ ok: false, error: String(error) }));
-
-    return true;
-  }
-
-  if (message?.type === "SOVEREIGN_SAVE_SETTINGS") {
-    chrome.storage.local.set({
-      sovereignApiBaseUrl: (message.payload?.sovereignApiBaseUrl || DEFAULTS.sovereignApiBaseUrl).trim(),
-      sovereignToken: (message.payload?.sovereignToken || "").trim(),
-      sovereignUserId: (message.payload?.sovereignUserId || DEFAULTS.sovereignUserId).trim(),
-      sovereignContactId: (message.payload?.sovereignContactId || DEFAULTS.sovereignContactId).trim(),
-      sovereignRelationshipRole: (message.payload?.sovereignRelationshipRole || DEFAULTS.sovereignRelationshipRole).trim()
-    }, () => {
-      if (chrome.runtime.lastError) {
-        sendResponse({
-          ok: false,
-          error: chrome.runtime.lastError.message
-        });
-        return;
-      }
-
-      sendResponse({ ok: true });
     });
 
-    return true;
-  }
-
-  return false;
+  return true;
 });

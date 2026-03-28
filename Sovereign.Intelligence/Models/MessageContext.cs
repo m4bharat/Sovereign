@@ -12,8 +12,24 @@ public sealed class MessageContext
     public string LastTopicSummary { get; init; } = string.Empty;
     public string RelevantMemories { get; init; } = string.Empty;
 
-    // Step 2 fields
+    // Existing Step 2 fields
     public string Platform { get; init; } = "LinkedIn";
     public IReadOnlyList<string> RecentMessages { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> MemoryFacts { get; init; } = Array.Empty<string>();
+
+    // Generic multi-platform source context
+    public string Surface { get; init; } = string.Empty;
+    public string CurrentUrl { get; init; } = string.Empty;
+
+    public string SourceAuthor { get; init; } = string.Empty;
+    public string SourceTitle { get; init; } = string.Empty;
+    public string SourceText { get; init; } = string.Empty;
+
+    public string ParentContextText { get; init; } = string.Empty;
+    public string NearbyContextText { get; init; } = string.Empty;
+
+    public string InteractionMode { get; init; } = "compose";
+
+    public IReadOnlyDictionary<string, string> InteractionMetadata { get; init; }
+        = new Dictionary<string, string>();
 }
