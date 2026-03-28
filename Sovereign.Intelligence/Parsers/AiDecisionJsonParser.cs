@@ -8,56 +8,77 @@ public sealed class AiDecisionJsonParser
     public AiDecision Parse(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
-            return Fallback();
+        {
+            return new AiDecision
+            {
+                Action = AiDecision.ReplyAction,
+                Reply = string.Empty,
+                Confidence = 0.0
+            };
+        }
+
+        var json = ExtractJsonObject(raw);
 
         try
         {
-            var trimmed = raw.Trim();
-            var start = trimmed.IndexOf('{');
-            var end = trimmed.LastIndexOf('}');
-            if (start >= 0 && end > start)
-                trimmed = trimmed[start..(end + 1)];
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
 
-            var result = JsonSerializer.Deserialize<AiDecision>(trimmed, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            return Validate(result);
+            return new AiDecision
+            {
+                Action = GetString(root, "action", AiDecision.ReplyAction),
+                Reply = GetString(root, "reply"),
+                MemoryKey = GetString(root, "memoryKey"),
+                MemoryValue = GetString(root, "memoryValue"),
+                Summary = GetString(root, "summary"),
+                Confidence = GetDouble(root, "confidence", 0.55)
+            };
         }
         catch
         {
-            return Fallback();
+            return new AiDecision
+            {
+                Action = AiDecision.ReplyAction,
+                Reply = raw.Trim(),
+                Summary = string.Empty,
+                Confidence = 0.45
+            };
         }
     }
 
-    private static AiDecision Validate(AiDecision? result)
+    private static string ExtractJsonObject(string raw)
     {
-        if (result is null || string.IsNullOrWhiteSpace(result.Action) || !AiDecision.AllowedActions.Contains(result.Action))
-            return Fallback();
+        var start = raw.IndexOf('{');
+        var end = raw.LastIndexOf('}');
 
-        var confidence = Math.Clamp(result.Confidence, 0, 1);
-
-        return result.Action.ToLowerInvariant() switch
+        if (start >= 0 && end > start)
         {
-            AiDecision.ReplyAction when string.IsNullOrWhiteSpace(result.Reply) => Fallback(),
-            AiDecision.SaveMemoryAction when string.IsNullOrWhiteSpace(result.MemoryKey) || string.IsNullOrWhiteSpace(result.MemoryValue) => Fallback(),
-            AiDecision.SummarizeAction when string.IsNullOrWhiteSpace(result.Summary) => Fallback(),
-            _ => new AiDecision
-            {
-                Action = result.Action.ToLowerInvariant(),
-                Reply = result.Reply?.Trim() ?? string.Empty,
-                MemoryKey = result.MemoryKey?.Trim() ?? string.Empty,
-                MemoryValue = result.MemoryValue?.Trim() ?? string.Empty,
-                Summary = result.Summary?.Trim() ?? string.Empty,
-                Confidence = confidence
-            }
-        };
+            return raw[start..(end + 1)];
+        }
+
+        return raw;
     }
 
-    private static AiDecision Fallback() => new()
+    private static string GetString(JsonElement root, string propertyName, string defaultValue = "")
     {
-        Action = AiDecision.NoAction,
-        Reply = string.Empty,
-        MemoryKey = string.Empty,
-        MemoryValue = string.Empty,
-        Summary = string.Empty,
-        Confidence = 0.0
-    };
+        if (root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString() ?? defaultValue;
+        }
+
+        return defaultValue;
+    }
+
+    private static double GetDouble(JsonElement root, string propertyName, double defaultValue)
+    {
+        if (root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Number)
+        {
+            if (value.TryGetDouble(out var result))
+            {
+                return result;
+            }
+        }
+
+        return defaultValue;
+    }
 }
