@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Configuration;
+using Sovereign.Intelligence.DecisionV2;
 using Sovereign.Intelligence.Engines;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Parsers;
@@ -22,6 +23,9 @@ public static class IntelligenceServiceCollection
         services.AddSingleton<AiDecisionPromptBuilder>();
         services.AddSingleton<AiDecisionJsonParser>();
         services.AddScoped<IAiDecisionService, AiDecisionService>();
+
+        services.AddSingleton<DecisionV2PromptBuilder>();
+        services.AddScoped<IDecisionEngineV2, DecisionEngineV2>();
 
         services.Configure<LlmOptions>(configuration.GetSection("Llm"));
         services.Configure<OpenAiOptions>(configuration.GetSection("OpenAI"));

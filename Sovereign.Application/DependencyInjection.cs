@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<DecayScoringEngine>();
         services.AddScoped<PromptComposer>();
         services.AddScoped<IToneAdjustmentStrategy, RuleBasedToneStrategy>();
+        services.AddScoped<DecideV2UseCase>();
         return services;
     }
 }

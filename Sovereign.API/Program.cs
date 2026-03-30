@@ -109,6 +109,7 @@ builder.Services.AddHealthChecks().AddNpgSql(connectionString, name: "postgresql
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(connectionString);
 builder.Services.AddSovereignIntelligence(builder.Configuration);
+//builder.Services.AddDecisionEngineV2();
 builder.Services.AddHostedService<DecayWorker>();
 
 var app = builder.Build();
