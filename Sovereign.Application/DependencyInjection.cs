@@ -14,13 +14,11 @@ public static class DependencyInjection
         services.AddScoped<LogInteractionUseCase>();
         services.AddScoped<RecordOutcomeUseCase>();
         services.AddScoped<GenerateStrategyUseCase>();
-        services.AddScoped<ProcessAiMessageUseCase>();
         services.AddScoped<SearchMemoryUseCase>();
         services.AddScoped<GetDashboardOverviewUseCase>();
         services.AddScoped<CreateThreadUseCase>();
         services.AddScoped<AddMessageToThreadUseCase>();
         services.AddScoped<GenerateThreadSummaryUseCase>();
-        services.AddScoped<ProcessAiMessageWithContextUseCase>();
         services.AddScoped<LoginUseCase>();
         services.AddScoped<RegisterUseCase>();
         services.AddScoped<UpsertSocialEdgeUseCase>();

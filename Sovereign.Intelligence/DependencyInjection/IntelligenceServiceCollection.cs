@@ -6,7 +6,6 @@ using Sovereign.Intelligence.Configuration;
 using Sovereign.Intelligence.DecisionV2;
 using Sovereign.Intelligence.Engines;
 using Sovereign.Intelligence.Interfaces;
-using Sovereign.Intelligence.Parsers;
 using Sovereign.Intelligence.Prompts;
 using Sovereign.Intelligence.Services;
 
@@ -20,9 +19,7 @@ public static class IntelligenceServiceCollection
         services.AddSingleton<IRelationshipIntelligenceEngine, RelationshipIntelligenceEngine>();
         services.AddSingleton<IInteractionEngine, InteractionEngine>();
         services.AddSingleton<IAIStrategyService, AIStrategyService>();
-        services.AddSingleton<AiDecisionPromptBuilder>();
-        services.AddSingleton<AiDecisionJsonParser>();
-        services.AddScoped<IAiDecisionService, AiDecisionService>();
+      
 
         services.AddSingleton<DecisionV2PromptBuilder>();
         services.AddScoped<IDecisionEngineV2, DecisionEngineV2>();
