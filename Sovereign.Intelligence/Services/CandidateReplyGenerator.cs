@@ -18,7 +18,7 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
                 Reply = BuildReply(context, move.Move),
                 ShortReply = BuildShortReply(context, move.Move),
                 GenerationConfidence = 0.85,
-                RequiresPolish = move.Move != "no_reply"
+                RequiresPolish = true,
             })
             .ToArray();
     }
@@ -35,6 +35,45 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
                 string.IsNullOrWhiteSpace(author)
                     ? "Congratulations on this exciting milestone. Wishing you all the best ahead."
                     : $"Congratulations, {author}! Wishing you all the best ahead.",
+
+            "congratulate_encourage" =>
+                string.IsNullOrWhiteSpace(author)
+                    ? "Congratulations on this milestone! Keep up the great work ahead."
+                    : $"Congratulations, {author}! Keep pushing forward with that momentum.",
+
+            "appreciate_journey" =>
+                string.IsNullOrWhiteSpace(author)
+                    ? "Impressive journey to get here. Respect the dedication."
+                    : $"Impressive journey, {author}. Respect the dedication it took.",
+
+            "express_interest" =>
+                "This looks like an interesting opportunity. I'd love to learn more.",
+
+            "amplify_signal" =>
+                "Sharing this great opportunity with my network. Looks promising!",
+
+            "offer_support" =>
+                "If you need any connections or advice, I'm here to help.",
+
+            "add_insight" =>
+                string.IsNullOrWhiteSpace(topic)
+                    ? "Great perspective. I'd add that context is key in these situations."
+                    : $"Great perspective on {topic}. I'd add that context is key.",
+
+            "agree" =>
+                "I agree with this take. Well said.",
+
+            "add_nuance" =>
+                "I agree, and I'd add that timing often plays a role too.",
+
+            "answer_supportively" =>
+                "That's a great question. In my experience, it depends on the context.",
+
+            "acknowledge_update" =>
+                "Thanks for the update. Good to hear from you.",
+
+            "encourage" =>
+                "Keep it up! You're doing great work.",
 
             "appreciate" =>
                 string.IsNullOrWhiteSpace(topic)

@@ -9,15 +9,6 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
     {
         var source = context.SourceText ?? string.Empty;
 
-        if (!string.Equals(context.InteractionMode, "reply", StringComparison.OrdinalIgnoreCase))
-        {
-            return new SocialSituation
-            {
-                Type = string.IsNullOrWhiteSpace(source) ? "compose_blank" : "reply",
-                Confidence = 0.60
-            };
-        }
-
         if (ContainsAny(source,
                 "joined", "joining", "new role", "new chapter", "excited to share",
                 "grateful", "gratitude", "happy to share", "thrilled to share",
@@ -83,6 +74,16 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
                 Type = "personal_update",
                 Confidence = 0.70,
                 Signals = new[] { "soft_signal", "personal update" }
+            };
+        }
+
+        if (ContainsAny(source, "good morning", "have a great day", "happy monday", "weekend recap"))
+        {
+            return new SocialSituation
+            {
+                Type = "casual",
+                Confidence = 0.70,
+                Signals = new[] { "casual greeting", "low engagement", "isCasual" }
             };
         }
 

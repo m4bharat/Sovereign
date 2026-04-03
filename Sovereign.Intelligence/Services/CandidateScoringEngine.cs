@@ -19,18 +19,31 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         MessageContext context,
         RelationshipAnalysis relationshipAnalysis)
     {
-        return candidates.Select(candidate => new CandidateScore
+        return candidates.Select(candidate =>
         {
-            Candidate = candidate,
-            Relevance = ScoreRelevance(context, candidate.Reply),
-            SocialFit = ScoreSocialFit(situation, candidate.Move),
-            Specificity = ScoreSpecificity(context, candidate.Reply),
-            HallucinationPenalty = ScoreHallucinationPenalty(context, candidate.Reply),
-            Tone = ScoreTone(candidate.Reply),
-            Brevity = ScoreBrevity(candidate.Reply),
-            RelationshipFit = ScoreRelationshipFit(relationshipAnalysis, candidate.Move),
-            RiskAdjustedValue = ScoreRiskAdjustedValue(relationshipAnalysis, candidate.Move),
-            TimingFit = ScoreTimingFit(relationshipAnalysis)
+            var score = new CandidateScore
+            {
+                Candidate = candidate,
+                Relevance = ScoreRelevance(context, candidate.Reply),
+                SocialFit = ScoreSocialFit(situation, candidate.Move),
+                Specificity = ScoreSpecificity(context, candidate.Reply),
+                HallucinationPenalty = ScoreHallucinationPenalty(context, candidate.Reply),
+                Tone = ScoreTone(candidate.Reply),
+                Brevity = ScoreBrevity(candidate.Reply),
+                RelationshipFit = ScoreRelationshipFit(relationshipAnalysis, candidate.Move),
+                RiskAdjustedValue = ScoreRiskAdjustedValue(relationshipAnalysis, candidate.Move),
+                TimingFit = ScoreTimingFit(relationshipAnalysis)
+            };
+            score.Total = (score.Relevance * 0.24) +
+                          (score.SocialFit * 0.20) +
+                          (score.Specificity * 0.16) +
+                          (score.Tone * 0.12) +
+                          (score.Brevity * 0.08) +
+                          (score.RelationshipFit * 0.10) +
+                          (score.RiskAdjustedValue * 0.10) +
+                          (score.TimingFit * 0.05) -
+                          score.HallucinationPenalty;
+            return score;
         }).ToArray();
     }
 

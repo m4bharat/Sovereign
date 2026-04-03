@@ -4,6 +4,7 @@ namespace Sovereign.Intelligence.Clients;
 
 public sealed class LocalLlmClient : ILlmClient
 {
+    [Obsolete("This legacy method is deprecated. Use CompleteDecisionV2Async for new DecisionV2 contracts.")]
     public Task<string> CompleteAsync(string prompt, CancellationToken ct = default)
     {
         var normalized = prompt.ToLowerInvariant();

@@ -9,8 +9,8 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
     {
         var filtered = scoredCandidates
             .Where(score => score.HallucinationPenalty < 0.35)
-            .Where(score => score.Tone >= 0.20)
-            .Where(score => score.Total >= 0.60) // Minimum threshold for replying
+            .Where(score => score.Tone >= 0.0)
+            .Where(score => score.Total >= 0.6) // Minimum threshold for replying
             .OrderByDescending(score => score.Total)
             .ToArray();
 

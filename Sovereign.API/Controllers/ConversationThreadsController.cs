@@ -26,7 +26,7 @@ public sealed class ConversationThreadsController : ControllerBase
     public async Task<ActionResult<CreateThreadResponse>> CreateThread([FromBody] CreateThreadRequest request, CancellationToken ct)
     {
         var response = await _createThreadUseCase.ExecuteAsync(request, ct);
-        return Ok(response);
+        return CreatedAtAction(nameof(CreateThread), new { id = response.ThreadId }, response);
     }
 
     [HttpPost("threads/{threadId:guid}/messages")]

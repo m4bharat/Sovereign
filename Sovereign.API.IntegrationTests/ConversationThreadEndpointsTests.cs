@@ -29,7 +29,7 @@ public sealed class ConversationThreadEndpointsTests : IClassFixture<CustomWebAp
 
         var response = await client.PostAsJsonAsync("/api/conversations/threads", request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var payload = await response.Content.ReadFromJsonAsync<CreateThreadResponse>();
         payload.Should().NotBeNull();
