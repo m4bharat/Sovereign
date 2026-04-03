@@ -25,7 +25,6 @@ public sealed class RelationshipIntelligenceEngine : IRelationshipIntelligenceEn
 
         return new SocialInsight
         {
-            RelationshipStrengthScore = Math.Round(Math.Clamp(strengthScore, 0, 100), 2),
             OpportunityScore = Math.Round(Math.Clamp(opportunityScore, 0, 100), 2),
             RiskScore = Math.Round(Math.Clamp(riskScore, 0, 100), 2),
             Summary = riskScore >= 55

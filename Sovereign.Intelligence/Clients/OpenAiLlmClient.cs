@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Sovereign.Intelligence.Configuration;
+using Sovereign.Intelligence.DecisionV2;
 
 namespace Sovereign.Intelligence.Clients;
 
@@ -55,6 +56,65 @@ public sealed class OpenAiLlmClient : ILlmClient
         throw new InvalidOperationException("OpenAI request failed unexpectedly.");
     }
 
+    public async Task<DecisionV2Result> CompleteDecisionV2Async(string prompt, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(_options.ApiKey))
+            throw new InvalidOperationException("OpenAI:ApiKey is missing.");
+
+        const int maxAttempts = 5;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var request = BuildRequest(prompt);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                if (attempt == maxAttempts)
+                {
+                    var body = await response.Content.ReadAsStringAsync(ct);
+                    throw new HttpRequestException($"OpenAI rate limit hit after {maxAttempts} attempts. Body: {body}", null, response.StatusCode);
+                }
+
+                await Task.Delay(GetRetryDelay(response, attempt), ct);
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+                throw new HttpRequestException($"OpenAI request failed with {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}", null, response.StatusCode);
+            }
+
+            var json = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            return new DecisionV2Result
+            {
+                Reply = root.GetProperty("reply").GetString() ?? string.Empty,
+                Confidence = root.GetProperty("confidence").GetDouble(),
+                Rationale = root.GetProperty("brief_rationale").GetString() ?? string.Empty,
+                Alternatives = root.GetProperty("alternative_rewrites").EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToList()
+            };
+        }
+
+        throw new InvalidOperationException("OpenAI request failed unexpectedly.");
+    }
+
+    public async IAsyncEnumerable<string> StreamCompletionAsync(string prompt, CancellationToken ct = default)
+    {
+        using var request = BuildRequest(prompt);
+        request.Headers.Add("Accept", "text/event-stream");
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+
+        await foreach (var line in ParseStream(response.Content.ReadAsStream(ct)))
+        {
+            yield return line;
+        }
+    }
+
     private HttpRequestMessage BuildRequest(string prompt)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl.TrimEnd('/')}/chat/completions");
@@ -67,30 +127,6 @@ public sealed class OpenAiLlmClient : ILlmClient
             {
                 new { role = "system", content = "You are a strict JSON decision engine." },
                 new { role = "user", content = prompt }
-            },
-            response_format = new
-            {
-                type = "json_schema",
-                json_schema = new
-                {
-                    name = "sovereign_ai_decision",
-                    strict = true,
-                    schema = new
-                    {
-                        type = "object",
-                        properties = new
-                        {
-                            action = new { type = "string", @enum = new[] { "reply", "save_memory", "summarize", "no_action" } },
-                            reply = new { type = "string" },
-                            memoryKey = new { type = "string" },
-                            memoryValue = new { type = "string" },
-                            summary = new { type = "string" },
-                            confidence = new { type = "number", minimum = 0, maximum = 1 }
-                        },
-                        required = new[] { "action", "reply", "memoryKey", "memoryValue", "summary", "confidence" },
-                        additionalProperties = false
-                    }
-                }
             },
             temperature = 0.1,
             max_tokens = 300
@@ -110,5 +146,14 @@ public sealed class OpenAiLlmClient : ILlmClient
         }
 
         return TimeSpan.FromSeconds(Math.Min(Math.Pow(2, attempt), 15));
+    }
+
+    private async IAsyncEnumerable<string> ParseStream(Stream stream)
+    {
+        using var reader = new StreamReader(stream);
+        while (!reader.EndOfStream)
+        {
+            yield return await reader.ReadLineAsync();
+        }
     }
 }

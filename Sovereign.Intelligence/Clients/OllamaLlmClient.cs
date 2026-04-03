@@ -1,9 +1,15 @@
 ﻿using System.Linq.Expressions;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Sovereign.Intelligence.Configuration;
 using System;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Sovereign.Intelligence.Clients;
 
@@ -75,4 +81,42 @@ public sealed class OllamaLlmClient : ILlmClient
             throw new Exception("Error completing prompt with Ollama", ex);
         }
     }
+
+    public async IAsyncEnumerable<string> StreamCompletionAsync(string prompt, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl.TrimEnd('/')}/stream");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+
+        var payload = new
+        {
+            model = _options.Model,
+            stream = true,
+            messages = new object[]
+            {
+                new { role = "system", content = _options.SystemPrompt },
+                new { role = "user", content = prompt }
+            }
+        };
+
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+
+        await foreach (var line in ParseStream(response.Content.ReadAsStream(ct)))
+        {
+            yield return line;
+        }
+    }
+
+    private async IAsyncEnumerable<string> ParseStream(Stream stream)
+    {
+        using var reader = new StreamReader(stream);
+        while (!reader.EndOfStream)
+        {
+            yield return await reader.ReadLineAsync();
+        }
+    }
+
+   
 }

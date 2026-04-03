@@ -14,4 +14,9 @@ public sealed class LocalLlmClient : ILlmClient
 
         return Task.FromResult("""{"action":"reply","reply":"I understand. Tell me a little more and I’ll help you respond strategically.","memoryKey":"","memoryValue":"","summary":"","confidence":0.58}""");
     }
+
+    public async IAsyncEnumerable<string> StreamCompletionAsync(string prompt, CancellationToken ct = default)
+    {
+        yield return "Streaming is not supported in LocalLlmClient.";
+    }
 }

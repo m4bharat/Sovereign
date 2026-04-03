@@ -9,6 +9,9 @@ public sealed class CandidateScore
     public double HallucinationPenalty { get; init; }
     public double Tone { get; init; }
     public double Brevity { get; init; }
+    public double RelationshipFit { get; init; }
+    public double RiskAdjustedValue { get; init; }
+    public double TimingFit { get; init; }
 
     public double Total =>
         (Relevance * 0.30) +

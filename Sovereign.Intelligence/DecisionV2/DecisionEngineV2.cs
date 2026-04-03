@@ -1,26 +1,46 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Prompts;
+using Sovereign.Intelligence.Services;
+using Sovereign.Intelligence.Engines;
+using Sovereign.Intelligence.Interfaces;
+using Sovereign.Intelligence.Models;
 
 namespace Sovereign.Intelligence.DecisionV2;
 
 public sealed class DecisionEngineV2 : IDecisionEngineV2
 {
+    private readonly IRelationshipIntelligenceEngine _relationshipIntelligenceEngine;
+    private readonly ISocialSituationDetector _socialSituationDetector;
+    private readonly ISocialMovePlanner _socialMovePlanner;
+    private readonly ICandidateReplyGenerator _candidateReplyGenerator;
+    private readonly ICandidateScoringEngine _candidateScoringEngine;
+    private readonly IWinnerSelectionEngine _winnerSelectionEngine;
     private readonly ILlmClient _llmClient;
-    private readonly DecisionV2PromptBuilder _promptBuilder;
     private readonly ILogger<DecisionEngineV2> _logger;
 
     public DecisionEngineV2(
+        IRelationshipIntelligenceEngine relationshipIntelligenceEngine,
+        ISocialSituationDetector socialSituationDetector,
+        ISocialMovePlanner socialMovePlanner,
+        ICandidateReplyGenerator candidateReplyGenerator,
+        ICandidateScoringEngine candidateScoringEngine,
+        IWinnerSelectionEngine winnerSelectionEngine,
         ILlmClient llmClient,
-        DecisionV2PromptBuilder promptBuilder,
         ILogger<DecisionEngineV2> logger)
     {
+        _relationshipIntelligenceEngine = relationshipIntelligenceEngine;
+        _socialSituationDetector = socialSituationDetector;
+        _socialMovePlanner = socialMovePlanner;
+        _candidateReplyGenerator = candidateReplyGenerator;
+        _candidateScoringEngine = candidateScoringEngine;
+        _winnerSelectionEngine = winnerSelectionEngine;
         _llmClient = llmClient;
-        _promptBuilder = promptBuilder;
         _logger = logger;
     }
 
@@ -28,268 +48,102 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         DecisionV2Input input,
         CancellationToken cancellationToken = default)
     {
-        var strategy = ResolveStrategy(input);
-        var tone = ResolveTone(input);
-        var confidence = ResolveConfidence(input, strategy);
+        var messageContext = BuildMessageContext(input);
+        var relationshipContext = BuildRelationshipContext(input);
 
-        var prompt = _promptBuilder.Build(input, strategy, tone, confidence);
-
-        try
+        // Analyze relationship context
+        var relationshipInsight = _relationshipIntelligenceEngine.Analyze(relationshipContext);
+        var relationshipAnalysis = new RelationshipAnalysis
         {
-            var raw = await _llmClient.CompleteAsync(prompt, cancellationToken);
-            var parsed = Parse(raw, input, strategy, tone, confidence);
+            ReciprocityScore = relationshipContext.ReciprocityScore,
+            MomentumScore = relationshipContext.MomentumScore,
+            PowerDifferential = relationshipContext.PowerDifferential,
+            EmotionalTemperature = relationshipContext.EmotionalTemperature,
+            OpportunityScore = relationshipInsight.OpportunityScore,
+            RiskScore = relationshipInsight.RiskScore,
+            ReplyUrgencyHint = relationshipContext.ReplyUrgencyHint
+        };
 
-            if (IsWeak(parsed, input))
-            {
-                var fallback = BuildDeterministicFallback(input, strategy, tone, confidence);
-                _logger.LogInformation(
-                    "DecisionV2 returned weak output for user {UserId}; using fallback strategy {Strategy}.",
-                    input.UserId,
-                    fallback.Strategy);
-                return fallback;
-            }
+        var situation = _socialSituationDetector.Detect(messageContext);
+        var moveCandidates = _socialMovePlanner.Plan(situation, relationshipAnalysis);
+        var replyCandidates = _candidateReplyGenerator.Generate(moveCandidates, messageContext);
+        var scoredCandidates = _candidateScoringEngine.Score(replyCandidates, situation, messageContext, relationshipAnalysis);
+        var winnerSelection = _winnerSelectionEngine.SelectBest(scoredCandidates);
+        var winner = winnerSelection.Winner;
 
-            _logger.LogInformation(
-                "DecisionV2 completed for user {UserId} with strategy {Strategy} and confidence {Confidence}.",
-                input.UserId,
-                parsed.Strategy,
-                parsed.Confidence);
-
-            return parsed;
-        }
-        catch (Exception ex)
+        if (ShouldSkipReply(winner))
         {
-            _logger.LogWarning(
-                ex,
-                "DecisionV2 failed for user {UserId}; using deterministic fallback.",
-                input.UserId);
-
-            return BuildDeterministicFallback(input, strategy, tone, confidence);
+            return BuildDecisionResult(winner, winnerSelection.Alternatives, allowNoReply: true);
         }
+
+        var polishedWinner = await TryPolishWinner(winner, messageContext, cancellationToken);
+        return BuildDecisionResult(polishedWinner, winnerSelection.Alternatives);
     }
 
-    private static string ResolveStrategy(DecisionV2Input input)
+    private MessageContext BuildMessageContext(DecisionV2Input input)
     {
-        var source = FirstNonEmpty(input.SourceText, input.ParentContextText).ToLowerInvariant();
-        var draft = (input.Message ?? string.Empty).ToLowerInvariant();
-
-        if (source.Contains("starting a new position") ||
-            source.Contains("happy to share") ||
-            source.Contains("excited to share") ||
-            source.Contains("new position"))
+        // Map DecisionV2Input to MessageContext
+        return new MessageContext
         {
-            return "celebratory_congratulations";
-        }
-
-        if (source.Contains("hiring") || source.Contains("we're hiring") || source.Contains("we are hiring"))
-        {
-            return "supportive_interest";
-        }
-
-        if (source.Contains("opinion") ||
-            source.Contains("i believe") ||
-            source.Contains("the real problem") ||
-            source.Contains("leadership") ||
-            source.Contains("empowerment") ||
-            source.Contains("strategy"))
-        {
-            return "add_insight";
-        }
-
-        if (draft.Contains("?"))
-        {
-            return "engage_with_question";
-        }
-
-        if (!string.IsNullOrWhiteSpace(source))
-        {
-            return "contextual_reply";
-        }
-
-        return "generic_improve";
-    }
-
-    private static string ResolveTone(DecisionV2Input input)
-    {
-        if (string.Equals(input.Platform, "linkedin", StringComparison.OrdinalIgnoreCase))
-        {
-            if (string.Equals(input.RelationshipRole, "Peer", StringComparison.OrdinalIgnoreCase))
-            {
-                return "professional_peer";
-            }
-
-            return "professional_neutral";
-        }
-
-        return "neutral";
-    }
-
-    private static double ResolveConfidence(DecisionV2Input input, string strategy)
-    {
-        var score = 0.45;
-
-        if (!string.IsNullOrWhiteSpace(input.SourceText)) score += 0.20;
-        if (!string.IsNullOrWhiteSpace(input.ParentContextText)) score += 0.10;
-        if (!string.IsNullOrWhiteSpace(input.SourceAuthor)) score += 0.05;
-        if (!string.IsNullOrWhiteSpace(input.Message)) score += 0.10;
-
-        if (strategy is "celebratory_congratulations" or "add_insight" or "contextual_reply")
-        {
-            score += 0.05;
-        }
-
-        return Math.Min(score, 0.95);
-    }
-
-    private static DecisionV2Result Parse(
-        string raw,
-        DecisionV2Input input,
-        string strategy,
-        string tone,
-        double confidence)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return BuildDeterministicFallback(input, strategy, tone, confidence);
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(raw);
-            var root = document.RootElement;
-
-            if (root.ValueKind == JsonValueKind.Object)
-            {
-                return new DecisionV2Result
-                {
-                    Strategy = ReadString(root, "strategy", strategy),
-                    Tone = ReadString(root, "tone", tone),
-                    Confidence = ReadDouble(root, "confidence", confidence),
-                    Reply = ReadString(root, "reply", string.Empty)
-                };
-            }
-        }
-        catch
-        {
-            // Treat raw as plain text below.
-        }
-
-        return new DecisionV2Result
-        {
-            Strategy = strategy,
-            Tone = tone,
-            Confidence = confidence,
-            Reply = raw.Trim()
+            UserId = input.UserId,
+            ContactId = input.ContactId,
+            Message = input.Message,
+            SourceText = input.SourceText,
+            ParentContextText = input.ParentContextText,
+            NearbyContextText = input.NearbyContextText,
+            // ...additional mappings...
         };
     }
 
-    private static bool IsWeak(DecisionV2Result result, DecisionV2Input input)
+    private RelationshipContext BuildRelationshipContext(DecisionV2Input input)
     {
-        if (result is null) return true;
-        if (string.IsNullOrWhiteSpace(result.Reply)) return true;
-
-        var normalized = result.Reply.Trim().ToLowerInvariant();
-
-        if (normalized.Contains("strong point—especially around") ||
-            normalized.Contains("consistent execution is usually what determines"))
+        // Build relationship context from input
+        return new RelationshipContext
         {
-            return true;
-        }
-
-        if (string.Equals(result.Strategy, "celebratory_congratulations", StringComparison.OrdinalIgnoreCase) &&
-            !normalized.Contains("congrat"))
-        {
-            return true;
-        }
-
-        if (!string.IsNullOrWhiteSpace(input.SourceText) &&
-            normalized.Length < 8)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private static DecisionV2Result BuildDeterministicFallback(
-        DecisionV2Input input,
-        string strategy,
-        string tone,
-        double confidence)
-    {
-        return new DecisionV2Result
-        {
-            Strategy = strategy,
-            Tone = tone,
-            Confidence = confidence,
-            Reply = BuildFallbackReply(input, strategy)
+            UserId = input.UserId,
+            ContactId = input.ContactId,
+            ReciprocityScore = input.ReciprocityScore,
+            MomentumScore = input.MomentumScore,
+            PowerDifferential = input.PowerDifferential,
+            EmotionalTemperature = input.EmotionalTemperature,
+            // ...additional mappings...
         };
     }
 
-    private static string BuildFallbackReply(DecisionV2Input input, string strategy)
+    private async Task<SocialMoveCandidate> TryPolishWinner(
+        SocialMoveCandidate winner,
+        MessageContext context,
+        CancellationToken cancellationToken)
     {
-        var author = input.SourceAuthor?.Trim();
-        var draft = input.Message?.Trim();
-
-        if (string.Equals(strategy, "celebratory_congratulations", StringComparison.OrdinalIgnoreCase))
+        if (!winner.RequiresPolish)
         {
-            if (!string.IsNullOrWhiteSpace(author))
-            {
-                return $"Congratulations, {author}! Wishing you great success in your new role.";
-            }
-
-            return "Congratulations! Wishing you great success in your new role.";
+            return winner;
         }
 
-        if (string.Equals(strategy, "engage_with_question", StringComparison.OrdinalIgnoreCase))
-        {
-            return !string.IsNullOrWhiteSpace(draft)
-                ? draft
-                : "Thoughtful perspective—curious how you’ve seen this play out in practice?";
-        }
-
-        if (string.Equals(strategy, "add_insight", StringComparison.OrdinalIgnoreCase))
-        {
-            return !string.IsNullOrWhiteSpace(draft)
-                ? draft
-                : "Thoughtful perspective—what stood out to me most is how execution determines whether ideas actually create impact.";
-        }
-
-        return !string.IsNullOrWhiteSpace(draft)
-            ? draft
-            : "Well said.";
+        var prompt = new DecisionV2PromptBuilder().BuildPolishPrompt(winner, context);
+        var polishedReply = await _llmClient.CompleteAsync(prompt, cancellationToken);
+        winner.Reply = polishedReply;
+        return winner;
     }
 
-    private static string ReadString(JsonElement root, string propertyName, string fallback)
+    private DecisionV2Result BuildDecisionResult(SocialMoveCandidate winner, IReadOnlyList<SocialMoveCandidate> alternatives, bool allowNoReply = false)
     {
-        if (root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String)
+        return new DecisionV2Result
         {
-            return value.GetString()?.Trim() ?? fallback;
-        }
-
-        return fallback;
+            Move = winner.Move,
+            Rationale = winner.Rationale,
+            ShouldReply = !allowNoReply || winner.Move != "no_reply",
+            Reply = winner.Reply,
+            Alternatives = alternatives.Select(a => a.Reply).ToList(),
+            RelationshipEffect = winner.RelationshipEffect,
+            RiskScore = winner.RiskScore,
+            OpportunityScore = winner.OpportunityScore,
+            // ...additional fields...
+        };
     }
 
-    private static double ReadDouble(JsonElement root, string propertyName, double fallback)
+    private bool ShouldSkipReply(SocialMoveCandidate winner)
     {
-        if (root.TryGetProperty(propertyName, out var value) && value.TryGetDouble(out var parsed))
-        {
-            return parsed;
-        }
-
-        return fallback;
-    }
-
-    private static string FirstNonEmpty(params string[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value.Trim();
-            }
-        }
-
-        return string.Empty;
+        return winner.Move == "no_reply" || winner.RiskScore > 0.8;
     }
 }

@@ -15,4 +15,11 @@ public sealed class RelationshipContext
     public double PowerDifferential { get; init; }
     public double EmotionalTemperature { get; init; }
     public string LastTopicSummary { get; init; } = string.Empty;
+
+    // New fields for richer relationship signals
+    public string RecentRelationshipSummary { get; init; } = string.Empty;
+    public double RelationshipStrengthScore { get; init; } = 0.0;
+    public double RiskScore { get; init; } = 0.0;
+    public double OpportunityScore { get; init; } = 0.0;
+    public double ReplyUrgencyHint { get; init; } = 0.0;
 }

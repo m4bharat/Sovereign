@@ -12,7 +12,7 @@ public sealed class SocialSituationDetector
         {
             return new SocialSituation
             {
-                Type = string.IsNullOrWhiteSpace(source) ? "compose" : "reply",
+                Type = string.IsNullOrWhiteSpace(source) ? "compose_blank" : "reply",
                 Confidence = 0.60
             };
         }
@@ -26,7 +26,18 @@ public sealed class SocialSituationDetector
             {
                 Type = "milestone",
                 Confidence = 0.90,
-                Signals = new[] { "career milestone", "gratitude", "new beginning" }
+                Signals = new[] { "career milestone", "gratitude", "new beginning", "isPublicCelebration" }
+            };
+        }
+
+        if (ContainsAny(source,
+                "hiring", "we're hiring", "we are hiring", "job opening", "career opportunity"))
+        {
+            return new SocialSituation
+            {
+                Type = "hiring",
+                Confidence = 0.85,
+                Signals = new[] { "job opportunity", "career transition", "containsCareerTransition" }
             };
         }
 
@@ -49,7 +60,7 @@ public sealed class SocialSituationDetector
             {
                 Type = "opinion",
                 Confidence = 0.76,
-                Signals = new[] { "opinion", "stance" }
+                Signals = new[] { "opinion", "stance", "asksForDiscussion" }
             };
         }
 
@@ -61,6 +72,16 @@ public sealed class SocialSituationDetector
                 Type = "question",
                 Confidence = 0.78,
                 Signals = new[] { "question", "discussion prompt" }
+            };
+        }
+
+        if (ContainsAny(source, "just wanted to share", "quick update", "thought you might like to know"))
+        {
+            return new SocialSituation
+            {
+                Type = "personal_update",
+                Confidence = 0.70,
+                Signals = new[] { "soft_signal", "personal update" }
             };
         }
 

@@ -1,9 +1,10 @@
 using System.Text.RegularExpressions;
+using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 
 namespace Sovereign.Intelligence.Services;
 
-public sealed class CandidateScoringEngine
+public sealed class CandidateScoringEngine : ICandidateScoringEngine
 {
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -13,9 +14,10 @@ public sealed class CandidateScoringEngine
     };
 
     public IReadOnlyList<CandidateScore> Score(
-        MessageContext context,
+        IReadOnlyList<SocialMoveCandidate> candidates,
         SocialSituation situation,
-        IReadOnlyList<SocialMoveCandidate> candidates)
+        MessageContext context,
+        RelationshipAnalysis relationshipAnalysis)
     {
         return candidates.Select(candidate => new CandidateScore
         {
@@ -25,7 +27,10 @@ public sealed class CandidateScoringEngine
             Specificity = ScoreSpecificity(context, candidate.Reply),
             HallucinationPenalty = ScoreHallucinationPenalty(context, candidate.Reply),
             Tone = ScoreTone(candidate.Reply),
-            Brevity = ScoreBrevity(candidate.Reply)
+            Brevity = ScoreBrevity(candidate.Reply),
+            RelationshipFit = ScoreRelationshipFit(relationshipAnalysis, candidate.Move),
+            RiskAdjustedValue = ScoreRiskAdjustedValue(relationshipAnalysis, candidate.Move),
+            TimingFit = ScoreTimingFit(relationshipAnalysis)
         }).ToArray();
     }
 
@@ -94,7 +99,7 @@ public sealed class CandidateScoringEngine
             context.SourceTitle ?? string.Empty,
             context.Message ?? string.Empty);
 
-        var suspiciousTerms = Regex.Matches(reply, "\b[A-Z][a-zA-Z]{2,}\b")
+        var suspiciousTerms = Regex.Matches(reply, @"\b[A-Z][a-zA-Z]{2,}\b")
             .Select(m => m.Value)
             .Where(term => !StopWords.Contains(term))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -180,5 +185,44 @@ public sealed class CandidateScoringEngine
             .Select(m => m.Value)
             .Where(token => token.Length > 2 && !StopWords.Contains(token))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static double ScoreRelationshipFit(RelationshipAnalysis analysis, string move)
+    {
+        if (analysis.PowerDifferential > 0.7 && move == "defer")
+        {
+            return 0.95;
+        }
+
+        if (analysis.MomentumScore < 0.3 && move == "reconnect")
+        {
+            return 0.90;
+        }
+
+        if (analysis.ReciprocityScore < 0.5 && move == "light_acknowledgment")
+        {
+            return 0.85;
+        }
+
+        return 0.70; // Default relationship fit score
+    }
+
+    private static double ScoreRiskAdjustedValue(RelationshipAnalysis analysis, string move)
+    {
+        var baseValue = move switch
+        {
+            "congratulate" => 0.85,
+            "appreciate" => 0.80,
+            "ask_relevant_question" => 0.75,
+            _ => 0.60
+        };
+
+        var riskPenalty = analysis.RiskScore * 0.20;
+        return Math.Clamp(baseValue - riskPenalty, 0.0, 1.0);
+    }
+
+    private static double ScoreTimingFit(RelationshipAnalysis analysis)
+    {
+        return analysis.ReplyUrgencyHint > 0.8 ? 0.90 : 0.70;
     }
 }
