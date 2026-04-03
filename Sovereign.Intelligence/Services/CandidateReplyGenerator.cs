@@ -1,9 +1,10 @@
+using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 using System.Text.RegularExpressions;
 
 namespace Sovereign.Intelligence.Services;
 
-public sealed class CandidateReplyGenerator
+public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
 {
     public IReadOnlyList<SocialMoveCandidate> Generate(
         IReadOnlyList<SocialMoveCandidate> moveCandidates,

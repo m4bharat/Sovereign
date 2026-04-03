@@ -91,7 +91,17 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             SourceText = input.SourceText,
             ParentContextText = input.ParentContextText,
             NearbyContextText = input.NearbyContextText,
-            // ...additional mappings...
+            Platform = input.Platform,
+            Surface = input.Surface,
+            CurrentUrl = input.CurrentUrl,
+            SourceAuthor = input.SourceAuthor,
+            SourceTitle = input.SourceTitle,
+            RelationshipRole = input.RelationshipRole,
+            // Additional mappings - these may need to be added to DecisionV2Input
+            LastInteractionDays = 0, // Placeholder
+            TotalInteractions = 0, // Placeholder
+            RecentRelationshipSummary = string.Empty, // Placeholder
+            RelevantMemories = string.Join("; ", input.RelevantMemories)
         };
     }
 
@@ -120,9 +130,11 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             return winner;
         }
 
-        var prompt = new DecisionV2PromptBuilder().BuildPolishPrompt(winner, context);
-        var polishedReply = await _llmClient.CompleteAsync(prompt, cancellationToken);
-        winner.Reply = polishedReply;
+        var prompt = new DecisionV2PromptBuilder().Build(winner, context);
+        var polishedResult = await _llmClient.CompleteDecisionV2Async(prompt, cancellationToken);
+        winner.Reply = polishedResult.Reply;
+        winner.GenerationConfidence = polishedResult.Confidence;
+        winner.Alternatives = polishedResult.Alternatives;
         return winner;
     }
 
@@ -134,6 +146,7 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             Rationale = winner.Rationale,
             ShouldReply = !allowNoReply || winner.Move != "no_reply",
             Reply = winner.Reply,
+            Confidence = winner.GenerationConfidence,
             Alternatives = alternatives.Select(a => a.Reply).ToList(),
             RelationshipEffect = winner.RelationshipEffect,
             RiskScore = winner.RiskScore,

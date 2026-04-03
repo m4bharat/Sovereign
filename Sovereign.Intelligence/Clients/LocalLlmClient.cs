@@ -1,3 +1,5 @@
+using Sovereign.Intelligence.DecisionV2;
+
 namespace Sovereign.Intelligence.Clients;
 
 public sealed class LocalLlmClient : ILlmClient
@@ -13,6 +15,18 @@ public sealed class LocalLlmClient : ILlmClient
             return Task.FromResult("""{"action":"summarize","reply":"","memoryKey":"","memoryValue":"","summary":"Conversation summary requested. Local mode cannot generate a richer summary yet.","confidence":0.64}""");
 
         return Task.FromResult("""{"action":"reply","reply":"I understand. Tell me a little more and I’ll help you respond strategically.","memoryKey":"","memoryValue":"","summary":"","confidence":0.58}""");
+    }
+
+    public Task<DecisionV2Result> CompleteDecisionV2Async(string prompt, CancellationToken ct = default)
+    {
+        // Local client returns a basic result for testing
+        return Task.FromResult(new DecisionV2Result
+        {
+            Reply = "Local mode: This is a placeholder reply.",
+            Confidence = 0.5,
+            Rationale = "Local testing mode",
+            Alternatives = new List<string> { "Alternative 1", "Alternative 2" }
+        });
     }
 
     public async IAsyncEnumerable<string> StreamCompletionAsync(string prompt, CancellationToken ct = default)

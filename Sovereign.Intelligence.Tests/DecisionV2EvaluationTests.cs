@@ -1,41 +1,141 @@
 // DecisionV2EvaluationTests.cs
-// This file contains regression tests for DecisionV2 using the golden scenario dataset.
+// This file contains regression tests for DecisionV2 orchestration.
 
-using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using Moq;
 using Xunit;
-using Sovereign.Intelligence.Evaluation;
+using Sovereign.Intelligence.DecisionV2;
+using Sovereign.Intelligence.Interfaces;
+using Sovereign.Intelligence.Models;
+using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Sovereign.Intelligence.Tests
 {
     public class DecisionV2EvaluationTests
     {
         [Fact]
-        public async Task DecisionV2_ShouldPassGoldenScenarios()
+        public async Task DecideAsync_ShouldReturnNoReply_WhenWinnerMoveIsNoReply()
         {
             // Arrange
-            var scenarios = GoldenScenarioDataset.GetScenarios();
-            var decisionEngine = new DecisionEngineV2();
+            var mockRelationshipEngine = new Mock<IRelationshipIntelligenceEngine>();
+            mockRelationshipEngine.Setup(e => e.Analyze(It.IsAny<RelationshipContext>()))
+                .Returns(new SocialInsight { OpportunityScore = 0.5, RiskScore = 0.5 });
 
-            foreach (var scenario in scenarios)
+            var mockSituationDetector = new Mock<ISocialSituationDetector>();
+            mockSituationDetector.Setup(d => d.Detect(It.IsAny<MessageContext>()))
+                .Returns(new SocialSituation { Type = "general" });
+
+            var mockMovePlanner = new Mock<ISocialMovePlanner>();
+            var moves = new List<SocialMoveCandidate>
             {
-                // Act
-                var result = await decisionEngine.MakeDecisionAsync(scenario.InputPayload);
+                new SocialMoveCandidate { Move = "no_reply", Rationale = "Test", Reply = "", RequiresPolish = false }
+            };
+            mockMovePlanner.Setup(p => p.Plan(It.IsAny<SocialSituation>(), It.IsAny<RelationshipAnalysis>()))
+                .Returns(moves);
 
-                // Assert
-                Assert.Equal(scenario.ExpectedMoveFamily, result.MoveFamily);
-                Assert.DoesNotContain(result.Behavior, scenario.ForbiddenBehaviors);
+            var mockReplyGenerator = new Mock<ICandidateReplyGenerator>();
+            mockReplyGenerator.Setup(g => g.Generate(It.IsAny<IReadOnlyList<SocialMoveCandidate>>(), It.IsAny<MessageContext>()))
+                .Returns(moves);
 
-                if (scenario.ShouldReply)
-                {
-                    Assert.Contains(result.Reply, scenario.AcceptableReplies);
-                }
-                else
-                {
-                    Assert.Null(result.Reply);
-                }
-            }
+            var mockScoringEngine = new Mock<ICandidateScoringEngine>();
+            var scores = new List<CandidateScore>
+            {
+                new CandidateScore { Candidate = moves[0], Total = 0.8 }
+            };
+            mockScoringEngine.Setup(s => s.Score(It.IsAny<IReadOnlyList<SocialMoveCandidate>>(), It.IsAny<SocialSituation>(), It.IsAny<MessageContext>(), It.IsAny<RelationshipAnalysis>()))
+                .Returns(scores);
+
+            var mockWinnerSelector = new Mock<IWinnerSelectionEngine>();
+            mockWinnerSelector.Setup(w => w.SelectBest(It.IsAny<IReadOnlyList<CandidateScore>>()))
+                .Returns(new WinnerSelectionResult { Winner = moves[0], Alternatives = new List<SocialMoveCandidate>() });
+
+            var mockLlmClient = new Mock<ILlmClient>();
+            var mockLogger = new Mock<ILogger<DecisionEngineV2>>();
+
+            var engine = new DecisionEngineV2(
+                mockRelationshipEngine.Object,
+                mockSituationDetector.Object,
+                mockMovePlanner.Object,
+                mockReplyGenerator.Object,
+                mockScoringEngine.Object,
+                mockWinnerSelector.Object,
+                mockLlmClient.Object,
+                mockLogger.Object);
+
+            var input = new DecisionV2Input { UserId = "user1", ContactId = "contact1", Message = "test" };
+
+            // Act
+            var result = await engine.DecideAsync(input);
+
+            // Assert
+            Assert.False(result.ShouldReply);
+            Assert.Equal("no_reply", result.Move);
+        }
+
+        [Fact]
+        public async Task DecideAsync_ShouldPolishWinner_WhenRequiresPolishIsTrue()
+        {
+            // Arrange
+            var mockRelationshipEngine = new Mock<IRelationshipIntelligenceEngine>();
+            mockRelationshipEngine.Setup(e => e.Analyze(It.IsAny<RelationshipContext>()))
+                .Returns(new SocialInsight { OpportunityScore = 0.5, RiskScore = 0.5 });
+
+            var mockSituationDetector = new Mock<ISocialSituationDetector>();
+            mockSituationDetector.Setup(d => d.Detect(It.IsAny<MessageContext>()))
+                .Returns(new SocialSituation { Type = "general" });
+
+            var mockMovePlanner = new Mock<ISocialMovePlanner>();
+            var moves = new List<SocialMoveCandidate>
+            {
+                new SocialMoveCandidate { Move = "reply", Rationale = "Test", Reply = "original", RequiresPolish = true }
+            };
+            mockMovePlanner.Setup(p => p.Plan(It.IsAny<SocialSituation>(), It.IsAny<RelationshipAnalysis>()))
+                .Returns(moves);
+
+            var mockReplyGenerator = new Mock<ICandidateReplyGenerator>();
+            mockReplyGenerator.Setup(g => g.Generate(It.IsAny<IReadOnlyList<SocialMoveCandidate>>(), It.IsAny<MessageContext>()))
+                .Returns(moves);
+
+            var mockScoringEngine = new Mock<ICandidateScoringEngine>();
+            var scores = new List<CandidateScore>
+            {
+                new CandidateScore { Candidate = moves[0], Total = 0.8 }
+            };
+            mockScoringEngine.Setup(s => s.Score(It.IsAny<IReadOnlyList<SocialMoveCandidate>>(), It.IsAny<SocialSituation>(), It.IsAny<MessageContext>(), It.IsAny<RelationshipAnalysis>()))
+                .Returns(scores);
+
+            var mockWinnerSelector = new Mock<IWinnerSelectionEngine>();
+            mockWinnerSelector.Setup(w => w.SelectBest(It.IsAny<IReadOnlyList<CandidateScore>>()))
+                .Returns(new WinnerSelectionResult { Winner = moves[0], Alternatives = new List<SocialMoveCandidate>() });
+
+            var mockLlmClient = new Mock<ILlmClient>();
+            mockLlmClient.Setup(c => c.CompleteDecisionV2Async(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(new DecisionV2Result { Reply = "polished reply", Confidence = 0.9, Rationale = "polished", Alternatives = new List<string>() });
+
+            var mockLogger = new Mock<ILogger<DecisionEngineV2>>();
+
+            var engine = new DecisionEngineV2(
+                mockRelationshipEngine.Object,
+                mockSituationDetector.Object,
+                mockMovePlanner.Object,
+                mockReplyGenerator.Object,
+                mockScoringEngine.Object,
+                mockWinnerSelector.Object,
+                mockLlmClient.Object,
+                mockLogger.Object);
+
+            var input = new DecisionV2Input { UserId = "user1", ContactId = "contact1", Message = "test" };
+
+            // Act
+            var result = await engine.DecideAsync(input);
+
+            // Assert
+            Assert.True(result.ShouldReply);
+            Assert.Equal("polished reply", result.Reply);
+            Assert.Equal(0.9, result.Confidence);
         }
     }
 }

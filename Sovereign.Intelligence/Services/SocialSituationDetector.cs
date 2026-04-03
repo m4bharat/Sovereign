@@ -1,8 +1,9 @@
+using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 
 namespace Sovereign.Intelligence.Services;
 
-public sealed class SocialSituationDetector
+public sealed class SocialSituationDetector : ISocialSituationDetector
 {
     public SocialSituation Detect(MessageContext context)
     {

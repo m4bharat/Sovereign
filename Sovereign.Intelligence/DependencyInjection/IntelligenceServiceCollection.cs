@@ -19,6 +19,11 @@ public static class IntelligenceServiceCollection
         services.AddSingleton<IRelationshipIntelligenceEngine, RelationshipIntelligenceEngine>();
         services.AddSingleton<IInteractionEngine, InteractionEngine>();
         services.AddSingleton<IAIStrategyService, AIStrategyService>();
+        services.AddSingleton<ISocialSituationDetector, SocialSituationDetector>();
+        services.AddSingleton<ISocialMovePlanner, SocialMovePlanner>();
+        services.AddSingleton<ICandidateReplyGenerator, CandidateReplyGenerator>();
+        services.AddSingleton<ICandidateScoringEngine, CandidateScoringEngine>();
+        services.AddSingleton<IWinnerSelectionEngine, WinnerSelectionEngine>();
       
 
         services.AddSingleton<DecisionV2PromptBuilder>();

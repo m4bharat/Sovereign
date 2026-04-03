@@ -11,6 +11,10 @@ public sealed class MessageContext
     public string LastTopicSummary { get; init; } = string.Empty;
     public string RelevantMemories { get; init; } = string.Empty;
 
+    public int LastInteractionDays { get; init; } = 0;
+    public int TotalInteractions { get; init; } = 0;
+    public string RecentRelationshipSummary { get; init; } = string.Empty;
+
     public string Platform { get; init; } = "LinkedIn";
     public IReadOnlyList<string> RecentMessages { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> MemoryFacts { get; init; } = Array.Empty<string>();

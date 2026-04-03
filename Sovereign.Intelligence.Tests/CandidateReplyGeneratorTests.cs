@@ -1,4 +1,4 @@
-using System.Threading.Tasks;
+using System.Linq;
 using Xunit;
 using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
@@ -8,21 +8,46 @@ namespace Sovereign.Intelligence.Tests
     public class CandidateReplyGeneratorTests
     {
         [Fact]
-        public async Task GenerateReply_ShouldReturnExpectedReply()
+        public void Generate_ShouldReturnCandidatesWithReplies()
         {
             // Arrange
             var generator = new CandidateReplyGenerator();
+            var moveCandidates = new[]
+            {
+                new SocialMoveCandidate { Move = "congratulate", Rationale = "Test" },
+                new SocialMoveCandidate { Move = "appreciate", Rationale = "Test" }
+            };
             var context = new MessageContext
             {
-                // Initialize with test data
+                SourceAuthor = "John Doe",
+                SourceText = "I got promoted!"
             };
 
             // Act
-            var reply = await generator.GenerateReplyAsync(context);
+            var result = generator.Generate(moveCandidates, context);
 
             // Assert
-            Assert.NotNull(reply);
-            Assert.Contains("ExpectedContent", reply.Content);
+            Assert.Equal(2, result.Count);
+            Assert.All(result, c => Assert.NotNull(c.Reply));
+            Assert.Contains("Congratulations", result.First().Reply);
+        }
+
+        [Fact]
+        public void Generate_ShouldSetRequiresPolishToTrue()
+        {
+            // Arrange
+            var generator = new CandidateReplyGenerator();
+            var moveCandidates = new[]
+            {
+                new SocialMoveCandidate { Move = "reply", Rationale = "Test" }
+            };
+            var context = new MessageContext();
+
+            // Act
+            var result = generator.Generate(moveCandidates, context);
+
+            // Assert
+            Assert.True(result.First().RequiresPolish);
         }
     }
 }

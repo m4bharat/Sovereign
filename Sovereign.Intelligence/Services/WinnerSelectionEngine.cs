@@ -37,9 +37,3 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
         };
     }
 }
-
-public sealed class WinnerSelectionResult
-{
-    public SocialMoveCandidate Winner { get; set; } = new();
-    public IReadOnlyList<SocialMoveCandidate> Alternatives { get; set; } = Array.Empty<SocialMoveCandidate>();
-}

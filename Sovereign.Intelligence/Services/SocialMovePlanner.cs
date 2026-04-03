@@ -1,8 +1,9 @@
+using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 
 namespace Sovereign.Intelligence.Services;
 
-public sealed class SocialMovePlanner
+public sealed class SocialMovePlanner : ISocialMovePlanner
 {
     public IReadOnlyList<SocialMoveCandidate> Plan(SocialSituation situation, RelationshipAnalysis relationshipAnalysis)
     {

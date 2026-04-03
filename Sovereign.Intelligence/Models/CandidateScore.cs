@@ -13,11 +13,5 @@ public sealed class CandidateScore
     public double RiskAdjustedValue { get; init; }
     public double TimingFit { get; init; }
 
-    public double Total =>
-        (Relevance * 0.30) +
-        (SocialFit * 0.25) +
-        (Specificity * 0.20) +
-        (Tone * 0.15) +
-        (Brevity * 0.10) -
-        HallucinationPenalty;
+    public double Total { get; set; }
 }
