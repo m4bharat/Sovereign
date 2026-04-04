@@ -1,0 +1,297 @@
+﻿  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Sovereign.Domain -> C:\JaiMataDi\SIL\Sovereign.Domain\bin\Debug\net8.0\Sovereign.Domain.dll
+  Sovereign.Intelligence -> C:\JaiMataDi\SIL\Sovereign.Intelligence\bin\Debug\net8.0\Sovereign.Intelligence.dll
+  Sovereign.Intelligence.Tests -> C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\bin\Debug\net8.0\Sovereign.Intelligence.Tests.dll
+Test run for C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\bin\Debug\net8.0\Sovereign.Intelligence.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.14.0 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+dotnet : [xUnit.net 00:00:00.38]     Sovereign.Intelligence.Tests.DecisionV2Acc
+eptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["Congrats", "Congratulations", "promotion", 
+"achievement"], AllowedMoveSynonyms = ["congratulate_encourage"], CaseName = 
+"Promotion Milestone - Warm Tie", ExpectedMoveFamily = "congratulate", 
+ForbiddenBehaviors = ["no_reply", "generic_praise"], ... }) [FAIL]
+At line:1 char:1
++ dotnet test Sovereign.Intelligence.Tests --filter "DecisionV2Acceptan ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([xUnit.net 00:0..., ... }) [FAIL] 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[xUnit.net 00:00:00.39]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["Congratulations", "well-deserved", "leadership"], 
+AllowedMoveSynonyms = ["congratulate"], CaseName = "Promotion Milestone - High 
+Power Differential", ExpectedMoveFamily = "defer", ForbiddenBehaviors = 
+["congratulate_encourage", "challenge"], ... }) [FAIL]
+[xUnit.net 00:00:00.39]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["balance", "work", "life", "advice", "experience"], 
+AllowedMoveSynonyms = ["answer_supportively"], CaseName = "Question Post - 
+Answer", ExpectedMoveFamily = "answer", ForbiddenBehaviors = ["no_reply", 
+"generic_advice"], ... }) [FAIL]
+[xUnit.net 00:00:00.39]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["impressive", "congratulations", "marathon"], 
+AllowedMoveSynonyms = ["appreciate"], CaseName = "Weak Tie Update - Light 
+Touch", ExpectedMoveFamily = "light_touch", ForbiddenBehaviors = ["no_reply", 
+"congratulate_encourage"], ... }) [FAIL]
+[xUnit.net 00:00:00.39]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["career", "change", "experience", "support", "thoughts"], 
+AllowedMoveSynonyms = ["answer_supportively", "ask_relevant_question"], 
+CaseName = "Warm Relationship - Direct Engagement", ExpectedMoveFamily = 
+"engage", ForbiddenBehaviors = ["no_reply", "generic_advice"], ... }) [FAIL]
+[xUnit.net 00:00:00.39]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["interested", "developer", "opportunity", "DM"], 
+AllowedMoveSynonyms = ["ask_details"], CaseName = "Recruiter Hiring Post - 
+Express Interest", ExpectedMoveFamily = "express_interest", ForbiddenBehaviors 
+= ["no_reply", "generic_praise"], ... }) [FAIL]
+[xUnit.net 00:00:00.39]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["congratulations", "funding", "success"], 
+AllowedMoveSynonyms = ["congratulate"], CaseName = "Celebratory Post from 
+High-Status Founder - Defer", ExpectedMoveFamily = "defer", ForbiddenBehaviors 
+= ["congratulate_encourage", "challenge"], ... }) [FAIL]
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["Congrats", "Congratulations", "promotion", "achievement"], AllowedMoveSynonyms = ["congratulate_encourage"], CaseName = "Promotion Milestone - Warm Tie", ExpectedMoveFamily = "congratulate", ForbiddenBehaviors = ["no_reply", "generic_praise"], ... }) [44 ms]
+  Error Message:
+   Reply should contain at least one acceptable token from: Congrats, Congratulations, promotion, achievement
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 69
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["Congratulations", "well-deserved", "leadership"], AllowedMoveSynonyms = ["congratulate"], CaseName = "Promotion Milestone - High Power Differential", ExpectedMoveFamily = "defer", ForbiddenBehaviors = ["congratulate_encourage", "challenge"], ... }) [1 ms]
+  Error Message:
+   Reply should contain at least one acceptable token from: Congratulations, well-deserved, leadership
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 69
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["balance", "work", "life", "advice", "experience"], AllowedMoveSynonyms = ["answer_supportively"], CaseName = "Question Post - Answer", ExpectedMoveFamily = "answer", ForbiddenBehaviors = ["no_reply", "generic_advice"], ... }) [< 1 ms]
+  Error Message:
+   Reply should contain at least one acceptable token from: balance, work, life, advice, experience
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 69
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["impressive", "congratulations", "marathon"], AllowedMoveSynonyms = ["appreciate"], CaseName = "Weak Tie Update - Light Touch", ExpectedMoveFamily = "light_touch", ForbiddenBehaviors = ["no_reply", "congratulate_encourage"], ... }) [< 1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 60
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["career", "change", "experience", "support", "thoughts"], AllowedMoveSynonyms = ["answer_supportively", "ask_relevant_question"], CaseName = "Warm Relationship - Direct Engagement", ExpectedMoveFamily = "engage", ForbiddenBehaviors = ["no_reply", "generic_advice"], ... }) [< 1 ms]
+  Error Message:
+   Move 'appreciate' should match expected 'engage' or synonyms: answer_supportively, ask_relevant_question
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 63
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["interested", "developer", "opportunity", "DM"], AllowedMoveSynonyms = ["ask_details"], CaseName = "Recruiter Hiring Post - Express Interest", ExpectedMoveFamily = "express_interest", ForbiddenBehaviors = ["no_reply", "generic_praise"], ... }) [< 1 ms]
+  Error Message:
+   Move 'engage_privately' should match expected 'express_interest' or synonyms: ask_details
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 63
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["congratulations", "funding", "success"], AllowedMoveSynonyms = ["congratulate"], CaseName = "Celebratory Post from High-Status Founder - Defer", ExpectedMoveFamily = "defer", ForbiddenBehaviors = ["congratulate_encourage", "challenge"], ... }) [< 1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 60
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["career", "journey", "reflection", "hope"], 
+AllowedMoveSynonyms = ["appreciate"], CaseName = "Cold Reconnect - Light 
+Touch", ExpectedMoveFamily = "light_touch", ForbiddenBehaviors = ["no_reply", 
+"deep_engagement"], ... }) [FAIL]
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["DM", "message", "privately", "discuss"], 
+AllowedMoveSynonyms = ["engage_privately"], CaseName = "DM-Worthy Case - 
+Direct Message", ExpectedMoveFamily = "direct_message", ForbiddenBehaviors = 
+["no_reply", "public_reply"], ... }) [FAIL]
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = [], AllowedMoveSynonyms = [], CaseName = "Explicit Reply 
+Later Case - No Reply", ExpectedMoveFamily = "no_reply", ForbiddenBehaviors = 
+["premature_reply"], ... }) [FAIL]
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["congratulations", "Forbes", "achievement"], 
+AllowedMoveSynonyms = ["congratulate"], CaseName = "Weak-Tie Humblebrag - 
+Light Touch", ExpectedMoveFamily = "light_touch", ForbiddenBehaviors = 
+["no_reply", "over_enthusiastic"], ... }) [FAIL]
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["grateful", "connections", "year", "reflection"], 
+AllowedMoveSynonyms = ["appreciate"], CaseName = "Relationship Preservation - 
+Engage", ExpectedMoveFamily = "engage", ForbiddenBehaviors = ["no_reply", 
+"generic_praise"], ... }) [FAIL]
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["thanks", "sharing", "update", "results"], 
+AllowedMoveSynonyms = ["light_touch"], CaseName = "Low-Context Compose - 
+Appreciate", ExpectedMoveFamily = "appreciate", ForbiddenBehaviors = 
+["no_reply", "deep_engagement"], ... }) [FAIL]
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["congratulations", "engaged", "celebrate", "excited"], 
+AllowedMoveSynonyms = ["congratulate_encourage"], CaseName = "Personal Update 
+- Support", ExpectedMoveFamily = "congratulate", ForbiddenBehaviors = 
+["no_reply", "generic_praise"], ... }) [FAIL]
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["merger", "tech", "sector", "development"], 
+AllowedMoveSynonyms = ["ask_relevant_question"], CaseName = "Industry News - 
+Comment", ExpectedMoveFamily = "add_insight", ForbiddenBehaviors = 
+["no_reply", "empty_comment"], ... }) [FAIL]
+[xUnit.net 00:00:00.40]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["excited", "job", "search", "opportunities", 
+"engineering"], AllowedMoveSynonyms = ["congratulate"], CaseName = "Job Search 
+Post - Encourage", ExpectedMoveFamily = "encourage", ForbiddenBehaviors = 
+["no_reply", "generic_advice"], ... }) [FAIL]
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["career", "journey", "reflection", "hope"], AllowedMoveSynonyms = ["appreciate"], CaseName = "Cold Reconnect - Light Touch", ExpectedMoveFamily = "light_touch", ForbiddenBehaviors = ["no_reply", "deep_engagement"], ... }) [< 1 ms]
+  Error Message:
+   Move 'congratulate' should match expected 'light_touch' or synonyms: appreciate
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 63
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["DM", "message", "privately", "discuss"], AllowedMoveSynonyms = ["engage_privately"], CaseName = "DM-Worthy Case - Direct Message", ExpectedMoveFamily = "direct_message", ForbiddenBehaviors = ["no_reply", "public_reply"], ... }) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 54
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = [], AllowedMoveSynonyms = [], CaseName = "Explicit Reply Later Case - No Reply", ExpectedMoveFamily = "no_reply", ForbiddenBehaviors = ["premature_reply"], ... }) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure
+Expected: False
+Actual:   True
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 54
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["congratulations", "Forbes", "achievement"], AllowedMoveSynonyms = ["congratulate"], CaseName = "Weak-Tie Humblebrag - Light Touch", ExpectedMoveFamily = "light_touch", ForbiddenBehaviors = ["no_reply", "over_enthusiastic"], ... }) [< 1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 60
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["grateful", "connections", "year", "reflection"], AllowedMoveSynonyms = ["appreciate"], CaseName = "Relationship Preservation - Engage", ExpectedMoveFamily = "engage", ForbiddenBehaviors = ["no_reply", "generic_praise"], ... }) [< 1 ms]
+  Error Message:
+   Move 'congratulate_encourage' should match expected 'engage' or synonyms: appreciate
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 63
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["thanks", "sharing", "update", "results"], AllowedMoveSynonyms = ["light_touch"], CaseName = "Low-Context Compose - Appreciate", ExpectedMoveFamily = "appreciate", ForbiddenBehaviors = ["no_reply", "deep_engagement"], ... }) [< 1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 60
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["congratulations", "engaged", "celebrate", "excited"], AllowedMoveSynonyms = ["congratulate_encourage"], CaseName = "Personal Update - Support", ExpectedMoveFamily = "congratulate", ForbiddenBehaviors = ["no_reply", "generic_praise"], ... }) [< 1 ms]
+  Error Message:
+   Move 'appreciate' should match expected 'congratulate' or synonyms: congratulate_encourage
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 63
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["merger", "tech", "sector", "development"], AllowedMoveSynonyms = ["ask_relevant_question"], CaseName = "Industry News - Comment", ExpectedMoveFamily = "add_insight", ForbiddenBehaviors = ["no_reply", "empty_comment"], ... }) [< 1 ms]
+  Error Message:
+   Move 'appreciate' should match expected 'add_insight' or synonyms: ask_relevant_question
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 63
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["excited", "job", "search", "opportunities", "engineering"], AllowedMoveSynonyms = ["congratulate"], CaseName = "Job Search Post - Encourage", ExpectedMoveFamily = "encourage", ForbiddenBehaviors = ["no_reply", "generic_advice"], ... }) [< 1 ms]
+  Error Message:
+   Reply should contain at least one acceptable token from: excited, job, search, opportunities, engineering
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 69
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:00.41]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = [], AllowedMoveSynonyms = [], CaseName = "Controversial 
+Opinion - No Reply", ExpectedMoveFamily = "no_reply", ForbiddenBehaviors = 
+["engage_debate", "confrontational_reply"], ... }) [FAIL]
+[xUnit.net 00:00:00.41]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["update", "agile", "processes", "sprint"], 
+AllowedMoveSynonyms = ["appreciate"], CaseName = "Group Announcement - 
+Acknowledge", ExpectedMoveFamily = "acknowledge", ForbiddenBehaviors = 
+["no_reply", "unnecessary_comment"], ... }) [FAIL]
+[xUnit.net 00:00:00.41]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["happy", "holidays", "joyful", "prosperous", "year"], 
+AllowedMoveSynonyms = ["appreciate"], CaseName = "Holiday Greeting - Respond", 
+ExpectedMoveFamily = "respond", ForbiddenBehaviors = ["no_reply", 
+"overly_personal"], ... }) [FAIL]
+[xUnit.net 00:00:00.41]     Sovereign.Intelligence.Tests.DecisionV2AcceptanceTe
+sts.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { 
+AcceptableReplies = ["proud", "project", "award", "innovation"], 
+AllowedMoveSynonyms = ["congratulate"], CaseName = "Achievement Share - 
+Praise", ExpectedMoveFamily = "praise", ForbiddenBehaviors = ["no_reply", 
+"generic_praise"], ... }) [FAIL]
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = [], AllowedMoveSynonyms = [], CaseName = "Controversial Opinion - No Reply", ExpectedMoveFamily = "no_reply", ForbiddenBehaviors = ["engage_debate", "confrontational_reply"], ... }) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure
+Expected: False
+Actual:   True
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 54
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["update", "agile", "processes", "sprint"], AllowedMoveSynonyms = ["appreciate"], CaseName = "Group Announcement - Acknowledge", ExpectedMoveFamily = "acknowledge", ForbiddenBehaviors = ["no_reply", "unnecessary_comment"], ... }) [< 1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 60
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["happy", "holidays", "joyful", "prosperous", "year"], AllowedMoveSynonyms = ["appreciate"], CaseName = "Holiday Greeting - Respond", ExpectedMoveFamily = "respond", ForbiddenBehaviors = ["no_reply", "overly_personal"], ... }) [< 1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 60
+--- End of stack trace from previous location ---
+  Failed Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(scenario: GoldenScenario { AcceptableReplies = ["proud", "project", "award", "innovation"], AllowedMoveSynonyms = ["congratulate"], CaseName = "Achievement Share - Praise", ExpectedMoveFamily = "praise", ForbiddenBehaviors = ["no_reply", "generic_praise"], ... }) [< 1 ms]
+  Error Message:
+   Reply should contain at least one acceptable token from: proud, project, award, innovation
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Sovereign.Intelligence.Tests.DecisionV2AcceptanceTests.DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario) in C:\JaiMataDi\SIL\Sovereign.Intelligence.Tests\DecisionV2AcceptanceTests.cs:line 69
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    20, Passed:     4, Skipped:     0, Total:    24, Duration: 66 ms - Sovereign.Intelligence.Tests.dll (net8.0)

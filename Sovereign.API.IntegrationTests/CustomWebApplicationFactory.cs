@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Sovereign.Infrastructure.Persistence;
+using Sovereign.Intelligence.Clients;
 
 namespace Sovereign.API.IntegrationTests;
 
@@ -44,10 +45,13 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 options.UseSqlite(_connection);
             });
 
+            services.AddSingleton<ILlmClient, FakeDecisionV2LlmClient>();
+
             var serviceProvider = services.BuildServiceProvider();
 
             using var scope = serviceProvider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<SovereignDbContext>();
+            db.Database.EnsureDeleted();
             db.Database.EnsureCreated();
         });
     }

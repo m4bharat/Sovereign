@@ -73,11 +73,17 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
     {
         return situation.Type switch
         {
-            "milestone" when move is "congratulate" or "congratulate_encourage" or "appreciate_journey" => 0.95,
+            "milestone" when move is "congratulate" or "congratulate_encourage" or "appreciate_journey" => 0.96,
             "educational" when move is "appreciate" or "add_insight" or "ask_relevant_question" => 0.92,
-            "opinion" when move is "agree" or "add_nuance" or "ask_relevant_question" => 0.90,
-            "question" when move is "answer_supportively" or "ask_relevant_question" => 0.90,
-            _ when move is "appreciate" or "encourage" => 0.72,
+            "opinion" when move is "agree" or "add_nuance" or "add_insight" or "ask_relevant_question" => 0.94,
+            "question" when move is "answer_supportively" => 0.98,
+            "question" when move is "ask_relevant_question" => 0.92,
+            "update" when move == "acknowledge" || move == "appreciate" => 0.88,
+            "direct_message" when move == "direct_message" || move == "engage_privately" || move == "ask_details" => 0.94,
+            "celebratory" when move == "defer" || move == "congratulate" || move == "praise" => 0.94,
+            "achievement" when move == "light_touch" || move == "praise" || move == "congratulate" => 0.92,
+            "reflection" when move == "engage" => 0.88,
+            _ when move == "appreciate" || move == "encourage" => 0.72,
             _ => 0.55
         };
     }
@@ -112,9 +118,16 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             context.SourceTitle ?? string.Empty,
             context.Message ?? string.Empty);
 
+        var allowedCapitalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Congratulations", "Congrats", "Thanks", "Thank", "Thankyou", "Well",
+            "Best", "Good", "Amazing", "Outstanding", "Strong", "Happy", "Prosperous"
+        };
+
         var suspiciousTerms = Regex.Matches(reply, @"\b[A-Z][a-zA-Z]{2,}\b")
             .Select(m => m.Value)
             .Where(term => !StopWords.Contains(term))
+            .Where(term => !allowedCapitalized.Contains(term))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(term => !source.Contains(term, StringComparison.OrdinalIgnoreCase))
             .Count();
@@ -122,9 +135,9 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return suspiciousTerms switch
         {
             0 => 0.0,
-            1 => 0.08,
-            2 => 0.25,
-            _ => 0.40
+            1 => 0.06,
+            2 => 0.18,
+            _ => 0.30
         };
     }
 

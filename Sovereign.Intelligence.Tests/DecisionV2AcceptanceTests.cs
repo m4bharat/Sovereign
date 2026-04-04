@@ -57,6 +57,19 @@ public class DecisionV2AcceptanceTests
             Assert.NotEmpty(result.Reply);
             Assert.True(result.Reply.Length <= scenario.MaxReplyLength);
 
+            // Check that move matches expected family or allowed synonyms
+            Assert.True(scenario.ExpectedMoveFamily == result.Move || scenario.AllowedMoveSynonyms.Contains(result.Move),
+                $"Move '{result.Move}' should match expected '{scenario.ExpectedMoveFamily}' or synonyms: {string.Join(", ", scenario.AllowedMoveSynonyms)}");
+
+            // Check that reply contains at least one acceptable token
+            var replyLower = result.Reply.ToLower();
+            var hasAcceptableToken = scenario.AcceptableReplies.Any(token => replyLower.Contains(token.ToLower()));
+            Assert.True(hasAcceptableToken, $"Reply should contain at least one acceptable token from: {string.Join(", ", scenario.AcceptableReplies)}");
+
+            // Check that reply does not contain forbidden patterns
+            var hasForbiddenPattern = scenario.ForbiddenReplyPatterns.Any(pattern => replyLower.Contains(pattern.ToLower()));
+            Assert.False(hasForbiddenPattern, $"Reply should not contain forbidden patterns: {string.Join(", ", scenario.ForbiddenReplyPatterns)}");
+
             // Check that reply does not contain forbidden behaviors
             var moveLower = result.Move.ToLower();
             var hasForbiddenBehavior = scenario.ForbiddenBehaviors

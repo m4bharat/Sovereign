@@ -64,13 +64,19 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
                 "I agree with this take. Well said.",
 
             "add_nuance" =>
-                "I agree, and I'd add that timing often plays a role too.",
+                string.IsNullOrWhiteSpace(topic)
+                    ? "I agree, and I'd add that timing often plays a role too."
+                    : $"I agree, and I'd add that timing often plays a role with {topic}.",
 
             "answer_supportively" =>
-                "That's a great question. In my experience, it depends on the context.",
+                string.IsNullOrWhiteSpace(topic)
+                    ? "That's a great question. In my experience, it depends on the context."
+                    : $"That's a thoughtful question about {topic}. In my experience, finding the right balance comes down to clarity and boundaries.",
 
             "acknowledge_update" =>
-                "Thanks for the update. Good to hear from you.",
+                string.IsNullOrWhiteSpace(topic)
+                    ? "Thanks for the update. Good to hear from you."
+                    : $"Thanks for the update on {topic}. Good to hear from you.",
 
             "encourage" =>
                 "Keep it up! You're doing great work.",
@@ -84,6 +90,36 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
                 string.IsNullOrWhiteSpace(topic)
                     ? "Curious how you’ve seen this play out in practice?"
                     : $"Curious — what’s the hardest part of applying {topic} in real systems?",
+
+            "defer" =>
+                "Impressive achievement. Well deserved.",
+
+            "direct_message" =>
+                "Let's take this to DM to discuss further.",
+
+            "ask_details" =>
+                "Could you share a few more details so I can understand it better?",
+
+            "engage_privately" =>
+                "This feels worth discussing privately — can we continue this in DM?",
+
+            "light_touch" =>
+                "Noted. Keep up the good work.",
+
+            "engage" =>
+                "This resonates. I'd love to hear more about your perspective.",
+
+            "praise" =>
+                "Outstanding work. Truly impressive.",
+
+            "respond" =>
+                "Thanks for sharing. Happy holidays to you too.",
+
+            "acknowledge" =>
+                "Thanks for the update. Noted.",
+
+            "no_reply" =>
+                string.Empty,
 
             _ => "Appreciate you sharing this — thoughtful framing."
         };
@@ -110,8 +146,34 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
 
     private static string ExtractTopic(string source)
     {
-        // Simplified topic extraction logic
-        var match = Regex.Match(source, @"\b(topic|concept|idea):\s*(\w+)", RegexOptions.IgnoreCase);
-        return match.Success ? match.Groups[2].Value : string.Empty;
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return string.Empty;
+        }
+
+        var patterns = new[]
+        {
+            @"\b(?:how do you|how can you|how would you)\s+(?:handle|manage|approach|think about)\s+([a-zA-Z0-9\s\-]+?)(?:[\?\.!]|$)",
+            @"\b(?:what(?:'s| is) your take on|what do you think about|what are your thoughts on)\s+([a-zA-Z0-9\s\-]+?)(?:[\?\.!]|$)",
+            @"\b(?:about|on|of|for|in|regarding)\s+([a-zA-Z0-9\s\-]+?)(?:[\?\.!]|$)",
+            @"\b(topic|concept|idea):\s*([a-zA-Z0-9\s\-]+)"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = Regex.Match(source, pattern, RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                var groupValue = match.Groups.Count > 2 ? match.Groups[2].Value : match.Groups[1].Value;
+                var topic = Regex.Replace(groupValue.Trim(), "\\s+", " ");
+                if (topic.Length > 0 && topic.Length <= 60)
+                {
+                    return topic;
+                }
+            }
+        }
+
+        var fallback = Regex.Match(source, @"\b([A-Za-z0-9\-]{4,})(?:\s+[A-Za-z0-9\-]{4,})?", RegexOptions.IgnoreCase);
+        return fallback.Success ? fallback.Value : string.Empty;
     }
 }

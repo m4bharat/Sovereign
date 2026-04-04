@@ -45,10 +45,68 @@ public sealed class SocialMovePlanner : ISocialMovePlanner
                 new SocialMoveCandidate { Move = "express_interest", Rationale = "Show interest in the update." },
                 new SocialMoveCandidate { Move = "encourage", Rationale = "Provide positive reinforcement." }
             },
+            "celebratory" => new[]
+            {
+                new SocialMoveCandidate { Move = "defer", Rationale = "High-status achievement, defer to avoid presumption." },
+                new SocialMoveCandidate { Move = "congratulate", Rationale = "Safe congratulation for company success." },
+                new SocialMoveCandidate { Move = "appreciate", Rationale = "Acknowledge the achievement." }
+            },
+            "reflection" => new[]
+            {
+                new SocialMoveCandidate { Move = "light_touch", Rationale = "Reconnect without overwhelming." },
+                new SocialMoveCandidate { Move = "appreciate", Rationale = "Acknowledge the reflection." },
+                new SocialMoveCandidate { Move = "engage", Rationale = "Deepen the connection." }
+            },
+            "sensitive" => new[]
+            {
+                new SocialMoveCandidate { Move = "no_reply", Rationale = "Sensitive topic requires restraint." }
+            },
+            "achievement" => new[]
+            {
+                new SocialMoveCandidate { Move = "light_touch", Rationale = "Acknowledge without over-enthusiasm." },
+                new SocialMoveCandidate { Move = "praise", Rationale = "Praise success in a measured way." },
+                new SocialMoveCandidate { Move = "congratulate", Rationale = "Congratulate the achievement." },
+                new SocialMoveCandidate { Move = "appreciate", Rationale = "Appreciate the accomplishment." }
+            },
+            "news" => new[]
+            {
+                new SocialMoveCandidate { Move = "add_insight", Rationale = "Add perspective to industry news." },
+                new SocialMoveCandidate { Move = "ask_relevant_question", Rationale = "Engage thoughtfully." },
+                new SocialMoveCandidate { Move = "appreciate", Rationale = "Acknowledge the information." }
+            },
+            "job_search" => new[]
+            {
+                new SocialMoveCandidate { Move = "encourage", Rationale = "Support the job search." },
+                new SocialMoveCandidate { Move = "congratulate", Rationale = "Congratulate the initiative." },
+                new SocialMoveCandidate { Move = "offer_support", Rationale = "Offer help or connections." }
+            },
+            "update" => new[]
+            {
+                new SocialMoveCandidate { Move = "acknowledge", Rationale = "Acknowledge the update." },
+                new SocialMoveCandidate { Move = "appreciate", Rationale = "Appreciate the communication." }
+            },
+            "greeting" => new[]
+            {
+                new SocialMoveCandidate { Move = "respond", Rationale = "Respond to the greeting." },
+                new SocialMoveCandidate { Move = "appreciate", Rationale = "Acknowledge the well-wishes." }
+            },
+            "direct_message" => new[]
+            {
+                new SocialMoveCandidate { Move = "direct_message", Rationale = "Move the conversation to a private channel." },
+                new SocialMoveCandidate { Move = "engage_privately", Rationale = "Offer a private follow-up conversation." },
+                new SocialMoveCandidate { Move = "ask_details", Rationale = "Request more context in a private thread." }
+            },
+            "low_signal" => new[]
+            {
+                new SocialMoveCandidate { Move = "no_reply", Rationale = "Generic greeting or low-signal message does not merit a reply." }
+            },
+            "controversial" => new[]
+            {
+                new SocialMoveCandidate { Move = "no_reply", Rationale = "Avoid engagement on potentially controversial content." }
+            },
             _ => new[]
             {
                 new SocialMoveCandidate { Move = "appreciate", Rationale = "Safe generic social move." },
-                new SocialMoveCandidate { Move = "encourage", Rationale = "Light positive reinforcement." }
             }
         };
 

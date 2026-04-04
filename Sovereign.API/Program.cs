@@ -117,7 +117,14 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<SovereignDbContext>();
-    dbContext.Database.Migrate();
+    if (!app.Environment.IsEnvironment("Testing"))
+    {
+        dbContext.Database.Migrate();
+    }
+    else
+    {
+        dbContext.Database.EnsureCreated();
+    }
 }
 
 app.UseCors("ClientApps");

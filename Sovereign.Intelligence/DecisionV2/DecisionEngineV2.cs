@@ -82,7 +82,6 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
 
     private MessageContext BuildMessageContext(DecisionV2Input input)
     {
-        // Map DecisionV2Input to MessageContext
         return new MessageContext
         {
             UserId = input.UserId,
@@ -97,17 +96,17 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             SourceAuthor = input.SourceAuthor,
             SourceTitle = input.SourceTitle,
             RelationshipRole = input.RelationshipRole,
-            // Additional mappings - these may need to be added to DecisionV2Input
-            LastInteractionDays = 0, // Placeholder
-            TotalInteractions = 0, // Placeholder
-            RecentRelationshipSummary = string.Empty, // Placeholder
-            RelevantMemories = string.Join("; ", input.RelevantMemories)
+            LastInteractionDays = input.LastInteractionDays,
+            TotalInteractions = input.TotalInteractions,
+            RecentRelationshipSummary = input.RecentRelationshipSummary,
+            RelevantMemories = string.Join("; ", input.RelevantMemories),
+            RecentSummary = input.RecentRelationshipSummary,
+            InteractionMode = "compose"
         };
     }
 
     private RelationshipContext BuildRelationshipContext(DecisionV2Input input)
     {
-        // Build relationship context from input
         return new RelationshipContext
         {
             UserId = input.UserId,
@@ -116,7 +115,8 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             MomentumScore = input.MomentumScore,
             PowerDifferential = input.PowerDifferential,
             EmotionalTemperature = input.EmotionalTemperature,
-            // ...additional mappings...
+            RecentRelationshipSummary = input.RecentRelationshipSummary,
+            ReplyUrgencyHint = input.AllowNoReply ? 0.0 : 0.5
         };
     }
 
@@ -140,12 +140,14 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
 
     private DecisionV2Result BuildDecisionResult(SocialMoveCandidate winner, IReadOnlyList<SocialMoveCandidate> alternatives, bool allowNoReply = false)
     {
+        var reply = winner.Move == "no_reply" && allowNoReply ? string.Empty : winner.Reply;
+
         return new DecisionV2Result
         {
             Move = winner.Move,
             Rationale = winner.Rationale,
             ShouldReply = !allowNoReply || winner.Move != "no_reply",
-            Reply = winner.Reply,
+            Reply = reply,
             Confidence = winner.GenerationConfidence,
             Alternatives = alternatives.Select(a => a.Reply).ToList(),
             RelationshipEffect = winner.RelationshipEffect,
