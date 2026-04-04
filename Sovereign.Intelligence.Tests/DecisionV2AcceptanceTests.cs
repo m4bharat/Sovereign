@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -48,38 +49,102 @@ public class DecisionV2AcceptanceTests
         // Act
         var result = await engine.DecideAsync(scenario.InputPayload);
 
-        // Assert
+        // Assert - enforce tightened acceptance harness
+        AssertGoldenScenarioMatch(result, scenario);
+    }
+
+    /// <summary>
+    /// Enforces tightened acceptance harness: move-family correctness, reply-quality grounding,
+    /// and forbidden-behavior checks (both move and reply).
+    /// </summary>
+    private static void AssertGoldenScenarioMatch(DecisionV2Result result, GoldenScenario scenario)
+    {
+        // Primary gate: ShouldReply correctness
         Assert.Equal(scenario.ShouldReply, result.ShouldReply);
 
-        if (scenario.ShouldReply)
+        if (!scenario.ShouldReply)
         {
-            Assert.NotNull(result.Reply);
-            Assert.NotEmpty(result.Reply);
-            Assert.True(result.Reply.Length <= scenario.MaxReplyLength);
-
-            // Check that move matches expected family or allowed synonyms
-            Assert.True(scenario.ExpectedMoveFamily == result.Move || scenario.AllowedMoveSynonyms.Contains(result.Move),
-                $"Move '{result.Move}' should match expected '{scenario.ExpectedMoveFamily}' or synonyms: {string.Join(", ", scenario.AllowedMoveSynonyms)}");
-
-            // Check that reply contains at least one acceptable token
-            var replyLower = result.Reply.ToLower();
-            var hasAcceptableToken = scenario.AcceptableReplies.Any(token => replyLower.Contains(token.ToLower()));
-            Assert.True(hasAcceptableToken, $"Reply should contain at least one acceptable token from: {string.Join(", ", scenario.AcceptableReplies)}");
-
-            // Check that reply does not contain forbidden patterns
-            var hasForbiddenPattern = scenario.ForbiddenReplyPatterns.Any(pattern => replyLower.Contains(pattern.ToLower()));
-            Assert.False(hasForbiddenPattern, $"Reply should not contain forbidden patterns: {string.Join(", ", scenario.ForbiddenReplyPatterns)}");
-
-            // Check that reply does not contain forbidden behaviors
-            var moveLower = result.Move.ToLower();
-            var hasForbiddenBehavior = scenario.ForbiddenBehaviors
-                .Any(forbidden => moveLower.Contains(forbidden.ToLower()));
-            Assert.False(hasForbiddenBehavior, $"Move should not contain forbidden behaviors: {string.Join(", ", scenario.ForbiddenBehaviors)}");
-        }
-        else
-        {
+            // No-reply case: hard assertion that move is no_reply
             Assert.Equal("no_reply", result.Move);
+            return;
         }
+
+        // Reply-expected case: enforce all dimensions in order
+        
+        // 1. Move-family correctness first
+        var moveMatches = MatchesExpectedMoveFamily(result.Move, scenario.ExpectedMoveFamily, scenario.AllowedMoveSynonyms);
+        Assert.True(moveMatches, 
+            $"Move '{result.Move}' should match family '{scenario.ExpectedMoveFamily}' or synonyms: {string.Join(", ", scenario.AllowedMoveSynonyms)}");
+
+        // 2. Non-empty, bounded reply
+        Assert.NotNull(result.Reply);
+        Assert.NotEmpty(result.Reply);
+        Assert.True(result.Reply.Length <= scenario.MaxReplyLength,
+            $"Reply length {result.Reply.Length} exceeds max {scenario.MaxReplyLength}");
+
+        // 3. Reply-quality grounding: contains acceptable signal
+        var hasAcceptableSignal = ContainsAcceptableReplySignal(result.Reply, scenario.AcceptableReplies);
+        Assert.True(hasAcceptableSignal,
+            $"Reply missing acceptable tokens from: {string.Join(", ", scenario.AcceptableReplies)}");
+
+        // 4. Forbidden-behavior checks in both move and reply (stricter)
+        var hasForbiddenBehavior = ContainsForbiddenBehavior(result.Move, result.Reply, scenario.ForbiddenBehaviors);
+        Assert.False(hasForbiddenBehavior,
+            $"Forbidden behaviors found in move or reply: {string.Join(", ", scenario.ForbiddenBehaviors)}");
+
+        // 5. Forbidden reply patterns
+        var hasForbiddenPattern = scenario.ForbiddenReplyPatterns.Any(pattern =>
+            result.Reply.Contains(pattern, System.StringComparison.OrdinalIgnoreCase));
+        Assert.False(hasForbiddenPattern,
+            $"Reply contains forbidden patterns: {string.Join(", ", scenario.ForbiddenReplyPatterns)}");
+    }
+
+    /// <summary>
+    /// Checks if result.Move matches the expected move family, accounting for allowed synonyms.
+    /// </summary>
+    private static bool MatchesExpectedMoveFamily(string resultMove, string expectedFamily, List<string> allowedSynonyms)
+    {
+        if (resultMove.Equals(expectedFamily, System.StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return allowedSynonyms != null && allowedSynonyms.Any(syn =>
+            resultMove.Equals(syn, System.StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Checks if result.Reply contains at least one acceptable token or phrase.
+    /// Grounds reply quality against the scenario's domain-specific acceptable list.
+    /// </summary>
+    private static bool ContainsAcceptableReplySignal(string reply, List<string> acceptableReplies)
+    {
+        if (string.IsNullOrEmpty(reply) || acceptableReplies == null || acceptableReplies.Count == 0)
+            return false;
+
+        var replyLower = reply.ToLower();
+        return acceptableReplies.Any(token =>
+            replyLower.Contains(token.ToLower(), System.StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Checks if result.Move or result.Reply contains any forbidden behavior.
+    /// Scans both move label and reply text for stricter forbidden-behavior enforcement.
+    /// This catches patterns like "generic_praise" in replies, not just move names.
+    /// </summary>
+    private static bool ContainsForbiddenBehavior(string move, string reply, List<string> forbiddenBehaviors)
+    {
+        if (forbiddenBehaviors == null || forbiddenBehaviors.Count == 0)
+            return false;
+
+        var moveLower = move.ToLower();
+        var replyLower = (reply ?? string.Empty).ToLower();
+
+        return forbiddenBehaviors.Any(forbidden =>
+        {
+            var forbiddenLower = forbidden.ToLower();
+            // Check both move and reply for forbidden behavior patterns
+            return moveLower.Contains(forbiddenLower, System.StringComparison.OrdinalIgnoreCase) ||
+                   replyLower.Contains(forbiddenLower, System.StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     public static IEnumerable<object[]> GetGoldenScenarios()
