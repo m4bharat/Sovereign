@@ -1,6 +1,6 @@
 (() => {
     const BUTTON_ID = "sovereign-linkedin-button";
-    const POLL_INTERVAL_MS = 1500;
+    const INJECTED_COMPOSERS = new Set();
 
     function isVisible(node) {
         return !!node && node.offsetParent !== null;
@@ -134,75 +134,99 @@
         ).trim();
     }
 
-    function injectButton() {
-        const composers = document.querySelectorAll(".ProseMirror, [contenteditable='true']");
+    function injectButton(composer) {
+        if (!isVisible(composer)) return;
+        if (!composer.parentElement) return;
+        if (composer.parentElement.querySelector(`#${BUTTON_ID}`)) return;
+
+        const btn = document.createElement("button");
+        btn.id = BUTTON_ID;
+        btn.innerText = "Suggest with Sovereign";
+        btn.style.cssText = "background:#0a66c2; color:white; border:none; border-radius:16px; padding:4px 12px; margin:4px; cursor:pointer; font-weight:600; font-size:12px; z-index:9999;";
+
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const context = buildGenericContext(composer);
+            const message = composer.innerText.trim();
+
+            const payload = {
+                UserId: "user-001",
+                ContactId: context.ContactId || "linkedin-compose-contact",
+                Message: message,
+                RelationshipRole: context.RelationshipRole || "Peer",
+                Platform: context.Platform || "linkedin",
+                Surface: context.Surface || "post_compose",
+                CurrentUrl: context.CurrentUrl || "",
+                SourceAuthor: context.SourceAuthor || "",
+                SourceTitle: context.SourceTitle || "",
+                SourceText: context.SourceText || "",
+                ParentContextText: context.ParentContextText || "",
+                NearbyContextText: context.NearbyContextText || "",
+                InteractionMetadata: context.InteractionMetadata || {}
+            };
+
+            console.log("Sovereign Context Captured:", context);
+            console.log("Sovereign Final Payload:", payload);
+
+            btn.innerText = "Thinking...";
+
+            chrome.runtime.sendMessage(
+                {
+                    type: "SOVEREIGN_DECIDE",
+                    payload
+                },
+                (res) => {
+                    btn.innerText = "Suggest with Sovereign";
+
+                    if (chrome.runtime.lastError) {
+                        console.error("Sovereign extension error:", chrome.runtime.lastError);
+                        return;
+                    }
+
+                    console.log("Sovereign API Response:", res);
+
+                    const reply = extractSuggestion(res?.data);
+
+                    if (reply) {
+                        composer.focus();
+                        document.execCommand("insertText", false, reply);
+                    }
+                }
+            );
+        };
+
+        composer.parentElement.appendChild(btn);
+    }
+
+    function scanForComposers() {
+        const composers = document.querySelectorAll(".ProseMirror, [contenteditable='true']:not(#suggestionBox)");
 
         composers.forEach((composer) => {
             if (!isVisible(composer)) return;
             if (!composer.parentElement) return;
             if (composer.parentElement.querySelector(`#${BUTTON_ID}`)) return;
+            if (INJECTED_COMPOSERS.has(composer)) return;
 
-            const btn = document.createElement("button");
-            btn.id = BUTTON_ID;
-            btn.innerText = "Suggest with Sovereign";
-            btn.style.cssText = "background:#0a66c2; color:white; border:none; border-radius:16px; padding:4px 12px; margin:4px; cursor:pointer; font-weight:600; font-size:12px; z-index:9999;";
-
-            btn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-
-                const context = buildGenericContext(composer);
-                const message = composer.innerText.trim();
-
-                const payload = {
-                    UserId: "user-001",
-                    ContactId: context.ContactId || "linkedin-compose-contact",
-                    Message: message,
-                    RelationshipRole: context.RelationshipRole || "Peer",
-                    Platform: context.Platform || "linkedin",
-                    Surface: context.Surface || "post_compose",
-                    CurrentUrl: context.CurrentUrl || "",
-                    SourceAuthor: context.SourceAuthor || "",
-                    SourceTitle: context.SourceTitle || "",
-                    SourceText: context.SourceText || "",
-                    ParentContextText: context.ParentContextText || "",
-                    NearbyContextText: context.NearbyContextText || "",
-                    InteractionMetadata: context.InteractionMetadata || {}
-                };
-
-                console.log("Sovereign Context Captured:", context);
-                console.log("Sovereign Final Payload:", payload);
-
-                btn.innerText = "Thinking...";
-
-                chrome.runtime.sendMessage(
-                    {
-                        type: "SOVEREIGN_DECIDE",
-                        payload
-                    },
-                    (res) => {
-                        btn.innerText = "Suggest with Sovereign";
-
-                        if (chrome.runtime.lastError) {
-                            console.error("Sovereign extension error:", chrome.runtime.lastError);
-                            return;
-                        }
-
-                        console.log("Sovereign API Response:", res);
-
-                        const reply = extractSuggestion(res?.data);
-
-                        if (reply) {
-                            composer.focus();
-                            document.execCommand("insertText", false, reply);
-                        }
-                    }
-                );
-            };
-
-            composer.parentElement.appendChild(btn);
+            INJECTED_COMPOSERS.add(composer);
+            injectButton(composer);
         });
     }
 
-    setInterval(injectButton, POLL_INTERVAL_MS);
+    // Use MutationObserver for reliable surface detection instead of interval polling
+    const observer = new MutationObserver(() => {
+        scanForComposers();
+    });
+
+    // Start observing the document for changes
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: false,
+        characterData: false
+    });
+
+    // Initial scan on load
+    scanForComposers();
 })();

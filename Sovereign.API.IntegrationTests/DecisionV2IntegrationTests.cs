@@ -96,4 +96,43 @@ public sealed class DecisionV2IntegrationTests : IClassFixture<CustomWebApplicat
         result.Move.Should().Be("no_reply");
         result.Reply.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task DecideV2_WithExtensionPayloadShape_ShouldProcessSuccessfully()
+    {
+        var client = _factory.CreateClient();
+
+        // Extension sends a simplified payload shape from the Chrome extension
+        var extensionPayload = new
+        {
+            UserId = "user-001",
+            ContactId = "john-doe-linkedin",
+            Message = "That's a great point about AI governance!",
+            RelationshipRole = "Peer",
+            Platform = "linkedin",
+            Surface = "feed_reply",
+            CurrentUrl = "https://www.linkedin.com/feed/",
+            SourceAuthor = "John Doe",
+            SourceTitle = "John Doe | Software Engineer at TechCorp",
+            SourceText = "Excited about the latest developments in AI governance and regulation.",
+            ParentContextText = "Excited about the latest developments in AI governance and regulation.",
+            NearbyContextText = "",
+            InteractionMetadata = new
+            {
+                mode = "reply",
+                pageTitle = "LinkedIn Feed"
+            }
+        };
+
+        var response = await client.PostAsJsonAsync("/api/ai/conversations/decide-v2", extensionPayload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var result = await response.Content.ReadFromJsonAsync<DecisionV2Result>();
+        result.Should().NotBeNull();
+        result!.Move.Should().NotBeNullOrEmpty();
+        result.Reply.Should().NotBeNullOrEmpty();
+        result.ShouldReply.Should().BeTrue();
+        result.Strategy.Should().NotBeNullOrEmpty();
+    }
 }

@@ -57,7 +57,33 @@ function extractErrorMessage(status, data, rawText) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!message || message.type !== "SOVEREIGN_DECIDE") {
+    if (!message) {
+        return false;
+    }
+
+    // Handle settings retrieval
+    if (message.type === "SOVEREIGN_GET_SETTINGS") {
+        getSettings()
+            .then((settings) => {
+                sendResponse({ ok: true, data: settings });
+            })
+            .catch((error) => {
+                sendResponse({ ok: false, error: error?.message || String(error) });
+            });
+        return true;
+    }
+
+    // Handle settings save
+    if (message.type === "SOVEREIGN_SAVE_SETTINGS") {
+        const payload = message.payload || {};
+        chrome.storage.local.set(payload, () => {
+            sendResponse({ ok: true, message: "Settings saved" });
+        });
+        return true;
+    }
+
+    // Handle decision requests
+    if (message.type !== "SOVEREIGN_DECIDE") {
         return false;
     }
 
