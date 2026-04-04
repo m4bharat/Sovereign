@@ -32,7 +32,10 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 Brevity = ScoreBrevity(candidate.Reply),
                 RelationshipFit = ScoreRelationshipFit(relationshipAnalysis, candidate.Move),
                 RiskAdjustedValue = ScoreRiskAdjustedValue(relationshipAnalysis, candidate.Move),
-                TimingFit = ScoreTimingFit(relationshipAnalysis)
+                TimingFit = ScoreTimingFit(relationshipAnalysis),
+                InsightDepth = ScoreInsightDepth(candidate, context),
+                GenericPraisePenalty = ScoreGenericPraisePenalty(candidate, context),
+                EngagementCost = ScoreEngagementCost(candidate, context)
             };
             score.Total = (score.Relevance * 0.24) +
                           (score.SocialFit * 0.20) +
@@ -42,7 +45,8 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                           (score.RelationshipFit * 0.10) +
                           (score.RiskAdjustedValue * 0.10) +
                           (score.TimingFit * 0.05) -
-                          score.HallucinationPenalty;
+                          score.HallucinationPenalty -
+                          (score.GenericPraisePenalty * 0.12);
             return score;
         }).ToArray();
     }
@@ -251,4 +255,150 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
     {
         return analysis.ReplyUrgencyHint > 0.8 ? 0.90 : 0.70;
     }
+
+    /// <summary>
+    /// Scores the depth of insight in a reply.
+    /// High scores indicate system-level thinking, constraints, reframing, or substantial extensions beyond praise.
+    /// </summary>
+    private static double ScoreInsightDepth(SocialMoveCandidate candidate, MessageContext context)
+    {
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(reply))
+            return 0.0;
+
+        double score = 0.0;
+
+        // Insight signals: system-level, constraints, architecture, scale
+        var insightSignals = new[]
+        {
+            "trade-off", "tradeoff", "constraint", "system", "scale", "architecture",
+            "coupling", "bottleneck", "coordination", "execution", "feasibility",
+            "infrastructure", "operational", "downstream", "failure", "latency"
+        };
+
+        var insightHits = insightSignals.Count(s => reply.Contains(s, StringComparison.OrdinalIgnoreCase));
+        score += Math.Min(0.45, insightHits * 0.08);
+
+        // Reframing signals
+        var reframeSignals = new[]
+        {
+            "the gap is", "missing piece", "breaks down", "real constraint", "looks simple",
+            "difference between", "classic case of"
+        };
+
+        var reframeHits = reframeSignals.Count(s => reply.Contains(s, StringComparison.OrdinalIgnoreCase));
+        score += Math.Min(0.25, reframeHits * 0.12);
+
+        // Causal structure
+        if (reply.Contains("because") || reply.Contains("when") || reply.Contains("where"))
+            score += 0.10;
+
+        // Extension beyond praise
+        var wordCount = reply.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length;
+        if (wordCount >= 12 && reply.Length > 80)
+            score += 0.08;
+
+        // Link back to source
+        var source = $"{context.SourceTitle ?? ""} {context.SourceText ?? ""}".ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            var sourceTokens = Tokenize(source);
+            var replyTokens = Tokenize(reply);
+            var overlap = replyTokens.Count(t => sourceTokens.Contains(t));
+            if (overlap >= 2)
+                score += 0.12;
+        }
+
+        // Penalize praise-only
+        if (IsMostlyPraise(reply))
+            score -= 0.35;
+
+        return Math.Clamp(score, 0.0, 1.0);
+    }
+
+    /// <summary>
+    /// Scores generic praise penalty. Higher scores indicate more generic/empty praise.
+    /// This penalty is applied to the total when generic praise patterns are detected.
+    /// </summary>
+    private static double ScoreGenericPraisePenalty(SocialMoveCandidate candidate, MessageContext context)
+    {
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(reply))
+            return 0.0;
+
+        double penalty = 0.0;
+
+        var genericPhrases = new[]
+        {
+            "great post", "well said", "thanks for sharing", "nice breakdown",
+            "great breakdown", "good point", "so true", "totally agree",
+            "great perspective", "love this", "very insightful", "important reminder",
+            "really drives home", "clear breakdown"
+        };
+
+        var phraseHits = genericPhrases.Count(p => reply.Contains(p, StringComparison.OrdinalIgnoreCase));
+        penalty += Math.Min(0.65, phraseHits * 0.18);
+
+        if (IsMostlyPraise(reply))
+            penalty += 0.25;
+
+        // Extra penalty for opinion/educational situations
+        var situation = (context.SituationType ?? "").ToLowerInvariant();
+        if ((situation == "opinion" || situation == "educational") && phraseHits > 0)
+            penalty += 0.20;
+
+        return Math.Clamp(penalty, 0.0, 1.0);
+    }
+
+    /// <summary>
+    /// Scores engagement cost penalty. Higher values indicate long, verbose replies on weak relationships.
+    /// </summary>
+    private static double ScoreEngagementCost(SocialMoveCandidate candidate, MessageContext context)
+    {
+        var reply = candidate.Reply ?? string.Empty;
+        var wordCount = reply.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length;
+
+        double cost = 0.0;
+
+        if (wordCount > 45)
+            cost += 0.20;
+        if (wordCount > 70)
+            cost += 0.20;
+
+        return Math.Clamp(cost, 0.0, 1.0);
+    }
+
+    /// <summary>
+    /// Detects if a reply is mostly praise with no insight signals.
+    /// Returns true if reply contains 2+ praise tokens and no insight signals.
+    /// </summary>
+    private static bool IsMostlyPraise(string reply)
+    {
+        var cleaned = reply.Trim().ToLowerInvariant();
+        var words = cleaned.Split(' ', System.StringSplitOptions.RemoveEmptyEntries);
+
+        if (words.Length <= 6)
+        {
+            var praise = new[] { "great", "good", "nice", "thanks" };
+            if (praise.Any(p => cleaned.Contains(p)))
+                return true;
+        }
+
+        var praiseTokens = new[]
+        {
+            "great", "nice", "good", "insightful", "important", "clear", "well", "true", "love", "thanks"
+        };
+
+        var praiseCount = words.Count(w => praiseTokens.Contains(w.Trim('.', ',', '!', '?')));
+
+        var insightSignals = new[]
+        {
+            "constraint", "system", "scale", "architecture", "tradeoff", "trade-off"
+        };
+
+        var insightCount = insightSignals.Count(s => cleaned.Contains(s));
+
+        return praiseCount >= 2 && insightCount == 0;
+    }
 }
+

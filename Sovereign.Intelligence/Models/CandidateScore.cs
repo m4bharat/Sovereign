@@ -12,6 +12,9 @@ public sealed class CandidateScore
     public double RelationshipFit { get; init; }
     public double RiskAdjustedValue { get; init; }
     public double TimingFit { get; init; }
+    public double InsightDepth { get; init; }
+    public double GenericPraisePenalty { get; init; }
+    public double EngagementCost { get; init; }
 
     public double Total { get; set; }
 }
