@@ -13,6 +13,49 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         "i","me","my","mine","his","her","hers","he","she","him","not","just","more","most","very","really","truly","new","role"
     };
 
+    private static readonly string[] InsightSignals =
+    {
+        "trade-off", "tradeoff", "second-order", "second order",
+        "constraint", "constraints", "system-level", "system level",
+        "coupling", "bottleneck", "latency", "coordination overhead",
+        "feasibility", "execution", "scale", "cost", "infra",
+        "architecture", "operational", "downstream", "failure mode",
+        "systemic", "surface-level", "reframe", "blindness"
+    };
+
+    private static readonly string[] ReframeSignals =
+    {
+        "this is a classic case of",
+        "the gap is",
+        "the missing piece is",
+        "what breaks down is",
+        "the real constraint is",
+        "what looks simple",
+        "the difference between",
+        "you see this a lot when"
+    };
+
+    private static readonly string[] GenericPraisePhrases =
+    {
+        "great post",
+        "well said",
+        "thanks for sharing",
+        "nice breakdown",
+        "great breakdown",
+        "good point",
+        "so true",
+        "totally agree",
+        "great perspective",
+        "love this",
+        "very insightful",
+        "important reminder",
+        "really drives home",
+        "makes the connection obvious",
+        "clear breakdown"
+    };
+
+    private static double Clamp01(double value) => Math.Clamp(value, 0.0, 1.0);
+
     public IReadOnlyList<CandidateScore> Score(
         IReadOnlyList<SocialMoveCandidate> candidates,
         SocialSituation situation,
@@ -32,21 +75,17 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 Brevity = ScoreBrevity(candidate.Reply),
                 RelationshipFit = ScoreRelationshipFit(relationshipAnalysis, candidate.Move),
                 RiskAdjustedValue = ScoreRiskAdjustedValue(relationshipAnalysis, candidate.Move),
-                TimingFit = ScoreTimingFit(relationshipAnalysis),
-                InsightDepth = ScoreInsightDepth(candidate, context),
-                GenericPraisePenalty = ScoreGenericPraisePenalty(candidate, context),
-                EngagementCost = ScoreEngagementCost(candidate, context)
+                TimingFit = ScoreTimingFit(relationshipAnalysis, candidate.Move),
+                InsightDepth = CalculateInsightDepth(candidate, context),
+                GenericPraisePenalty = CalculateGenericPraisePenalty(candidate, context),
+                EngagementCost = CalculateEngagementCost(candidate, relationshipAnalysis)
             };
-            score.Total = (score.Relevance * 0.24) +
-                          (score.SocialFit * 0.20) +
-                          (score.Specificity * 0.16) +
-                          (score.Tone * 0.12) +
-                          (score.Brevity * 0.08) +
-                          (score.RelationshipFit * 0.10) +
-                          (score.RiskAdjustedValue * 0.10) +
-                          (score.TimingFit * 0.05) -
-                          score.HallucinationPenalty -
-                          (score.GenericPraisePenalty * 0.12);
+
+            if (IsDisqualifiedAsGenericPraise(candidate, context, score))
+            {
+                score.Total = 0.0;
+            }
+
             return score;
         }).ToArray();
     }
@@ -234,6 +273,11 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             return 0.85;
         }
 
+        if (analysis.MomentumScore > 0.75 && move == "congratulate_encourage")
+        {
+            return 0.92;
+        }
+
         return 0.70; // Default relationship fit score
     }
 
@@ -251,8 +295,19 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return Math.Clamp(baseValue - riskPenalty, 0.0, 1.0);
     }
 
-    private static double ScoreTimingFit(RelationshipAnalysis analysis)
+    private static double ScoreTimingFit(RelationshipAnalysis analysis, string move)
     {
+        if (string.Equals(move, "follow_up", StringComparison.OrdinalIgnoreCase))
+        {
+            return analysis.ReplyUrgencyHint > 0.8 ? 0.70 : 0.55;
+        }
+
+        if (string.Equals(move, "congratulate", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(move, "congratulate_encourage", StringComparison.OrdinalIgnoreCase))
+        {
+            return analysis.ReplyUrgencyHint > 0.8 ? 0.95 : 0.75;
+        }
+
         return analysis.ReplyUrgencyHint > 0.8 ? 0.90 : 0.70;
     }
 
@@ -260,7 +315,7 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
     /// Scores the depth of insight in a reply.
     /// High scores indicate system-level thinking, constraints, reframing, or substantial extensions beyond praise.
     /// </summary>
-    private static double ScoreInsightDepth(SocialMoveCandidate candidate, MessageContext context)
+    private static double CalculateInsightDepth(SocialMoveCandidate candidate, MessageContext context)
     {
         var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(reply))
@@ -268,59 +323,38 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
 
         double score = 0.0;
 
-        // Insight signals: system-level, constraints, architecture, scale
-        var insightSignals = new[]
-        {
-            "trade-off", "tradeoff", "constraint", "system", "scale", "architecture",
-            "coupling", "bottleneck", "coordination", "execution", "feasibility",
-            "infrastructure", "operational", "downstream", "failure", "latency"
-        };
+        var insightKeywordHits = InsightSignals.Count(s => reply.Contains(s));
+        score += Math.Min(0.45, insightKeywordHits * 0.08);
 
-        var insightHits = insightSignals.Count(s => reply.Contains(s, StringComparison.OrdinalIgnoreCase));
-        score += Math.Min(0.45, insightHits * 0.08);
-
-        // Reframing signals
-        var reframeSignals = new[]
-        {
-            "the gap is", "missing piece", "breaks down", "real constraint", "looks simple",
-            "difference between", "classic case of"
-        };
-
-        var reframeHits = reframeSignals.Count(s => reply.Contains(s, StringComparison.OrdinalIgnoreCase));
+        var reframeHits = ReframeSignals.Count(s => reply.Contains(s));
         score += Math.Min(0.25, reframeHits * 0.12);
 
-        // Causal structure
         if (reply.Contains("because") || reply.Contains("when") || reply.Contains("where"))
             score += 0.10;
 
-        // Extension beyond praise
-        var wordCount = reply.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length;
-        if (wordCount >= 12 && reply.Length > 80)
+        if (reply.Length > 80 && reply.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length >= 12)
             score += 0.08;
 
-        // Link back to source
-        var source = $"{context.SourceTitle ?? ""} {context.SourceText ?? ""}".ToLowerInvariant();
+        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty}".ToLowerInvariant();
         if (!string.IsNullOrWhiteSpace(source))
         {
             var sourceTokens = Tokenize(source);
-            var replyTokens = Tokenize(reply);
-            var overlap = replyTokens.Count(t => sourceTokens.Contains(t));
+            var overlap = sourceTokens.Count(t => reply.Contains(t, StringComparison.OrdinalIgnoreCase));
             if (overlap >= 2)
                 score += 0.12;
         }
 
-        // Penalize praise-only
         if (IsMostlyPraise(reply))
             score -= 0.35;
 
-        return Math.Clamp(score, 0.0, 1.0);
+        return Clamp01(score);
     }
 
     /// <summary>
     /// Scores generic praise penalty. Higher scores indicate more generic/empty praise.
     /// This penalty is applied to the total when generic praise patterns are detected.
     /// </summary>
-    private static double ScoreGenericPraisePenalty(SocialMoveCandidate candidate, MessageContext context)
+    private static double CalculateGenericPraisePenalty(SocialMoveCandidate candidate, MessageContext context)
     {
         var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(reply))
@@ -328,44 +362,70 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
 
         double penalty = 0.0;
 
-        var genericPhrases = new[]
-        {
-            "great post", "well said", "thanks for sharing", "nice breakdown",
-            "great breakdown", "good point", "so true", "totally agree",
-            "great perspective", "love this", "very insightful", "important reminder",
-            "really drives home", "clear breakdown"
-        };
-
-        var phraseHits = genericPhrases.Count(p => reply.Contains(p, StringComparison.OrdinalIgnoreCase));
+        var phraseHits = GenericPraisePhrases.Count(p => reply.Contains(p));
         penalty += Math.Min(0.65, phraseHits * 0.18);
 
         if (IsMostlyPraise(reply))
             penalty += 0.25;
 
-        // Extra penalty for opinion/educational situations
-        var situation = (context.SituationType ?? "").ToLowerInvariant();
+        var situation = (context.SituationType ?? string.Empty).ToLowerInvariant();
         if ((situation == "opinion" || situation == "educational") && phraseHits > 0)
             penalty += 0.20;
 
-        return Math.Clamp(penalty, 0.0, 1.0);
+        if ((candidate.Move?.Contains("insight", StringComparison.OrdinalIgnoreCase) ?? false) &&
+            CalculateInsightDepth(candidate, context) < 0.18)
+        {
+            penalty += 0.20;
+        }
+
+        return Clamp01(penalty);
     }
 
     /// <summary>
     /// Scores engagement cost penalty. Higher values indicate long, verbose replies on weak relationships.
     /// </summary>
-    private static double ScoreEngagementCost(SocialMoveCandidate candidate, MessageContext context)
+    private static double CalculateEngagementCost(SocialMoveCandidate candidate, RelationshipAnalysis relationship)
     {
         var reply = candidate.Reply ?? string.Empty;
-        var wordCount = reply.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length;
+        var words = reply.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length;
 
         double cost = 0.0;
 
-        if (wordCount > 45)
+        if (words > 45)
             cost += 0.20;
-        if (wordCount > 70)
+        if (words > 70)
             cost += 0.20;
 
-        return Math.Clamp(cost, 0.0, 1.0);
+        if (relationship != null)
+        {
+            if (relationship.ReciprocityScore < 0.35 && words > 35)
+                cost += 0.20;
+
+            if (relationship.PowerDifferential > 0.75 && words > 30)
+                cost += 0.15;
+        }
+
+        return Clamp01(cost);
+    }
+
+    private bool IsDisqualifiedAsGenericPraise(
+        SocialMoveCandidate candidate,
+        MessageContext context,
+        CandidateScore score)
+    {
+        var situation = (context.SituationType ?? string.Empty).ToLowerInvariant();
+
+        var requiresInsight =
+            situation == "opinion" ||
+            situation == "educational" ||
+            situation == "analysis";
+
+        if (!requiresInsight)
+            return false;
+
+        return score.GenericPraisePenalty >= 0.45 &&
+               score.InsightDepth <= 0.15 &&
+               score.Specificity <= 0.20;
     }
 
     /// <summary>
@@ -377,28 +437,20 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         var cleaned = reply.Trim().ToLowerInvariant();
         var words = cleaned.Split(' ', System.StringSplitOptions.RemoveEmptyEntries);
 
-        if (words.Length <= 6)
-        {
-            var praise = new[] { "great", "good", "nice", "thanks" };
-            if (praise.Any(p => cleaned.Contains(p)))
-                return true;
-        }
+        if (words.Length <= 6 && GenericPraisePhrases.Any(p => cleaned.Contains(p)))
+            return true;
 
         var praiseTokens = new[]
         {
-            "great", "nice", "good", "insightful", "important", "clear", "well", "true", "love", "thanks"
+            "great", "nice", "good", "insightful", "important",
+            "clear", "well", "true", "love", "thanks"
         };
 
         var praiseCount = words.Count(w => praiseTokens.Contains(w.Trim('.', ',', '!', '?')));
+        var conceptSignals = InsightSignals.Count(s => cleaned.Contains(s)) +
+                             ReframeSignals.Count(s => cleaned.Contains(s));
 
-        var insightSignals = new[]
-        {
-            "constraint", "system", "scale", "architecture", "tradeoff", "trade-off"
-        };
-
-        var insightCount = insightSignals.Count(s => cleaned.Contains(s));
-
-        return praiseCount >= 2 && insightCount == 0;
+        return praiseCount >= 2 && conceptSignals == 0;
     }
 }
 

@@ -38,6 +38,49 @@ public class CandidateScoringEngineTests
     }
 
     [Fact]
+    public void Score_ShouldPreferInsightOverGenericPraise_OnOpinionPosts()
+    {
+        // Arrange
+        var candidates = new List<SocialMoveCandidate>
+        {
+            new SocialMoveCandidate
+            {
+                Move = "appreciate",
+                Reply = "Thanks for the clear breakdown — it really drives home how essential context is.",
+                RequiresPolish = false
+            },
+            new SocialMoveCandidate
+            {
+                Move = "add_insight",
+                Reply = "This is a classic systems problem: ideas that sound simple collapse when they hit infrastructure, cost, and coordination constraints.",
+                RequiresPolish = false
+            }
+        };
+
+        var situation = new SocialSituation { Type = "opinion" };
+        var context = new MessageContext
+        {
+            Message = "What do you think about systemic risk in platform engineering?",
+            SourceText = "When systems grow, coordination cost and hidden constraints can become the real failure mode."
+        };
+        var relationship = new RelationshipAnalysis { ReciprocityScore = 0.7, ReplyUrgencyHint = 0.5 };
+
+        // Act
+        var scores = _engine.Score(candidates, situation, context, relationship);
+
+        // Assert
+        var genericScore = scores.First(s => s.Candidate.Move == "appreciate");
+        var insightScore = scores.First(s => s.Candidate.Move == "add_insight");
+
+        Assert.True(insightScore.Total > genericScore.Total,
+            "Insightful reply should score higher than generic praise on opinion posts.");
+        Assert.True(genericScore.GenericPraisePenalty >= 0.30,
+            "Generic praise should receive a meaningful penalty.");
+        Assert.True(insightScore.InsightDepth > genericScore.InsightDepth,
+            "Insight reply should have higher InsightDepth than generic praise.");
+    }
+
+    [Fact]
     public void Score_ShouldPenalizeHallucinatedSpecifics()
     {
         // Arrange

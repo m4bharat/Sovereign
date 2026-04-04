@@ -9,9 +9,14 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
     {
         var filtered = scoredCandidates
             .Where(score => score.HallucinationPenalty < 0.35)
-            .Where(score => score.Tone >= 0.0)
-            .Where(score => score.Total >= 0.5) // Minimum threshold for replying
+            .Where(score => score.Tone >= 0.20)
+            .Where(score => score.Total > 0.5) // Minimum threshold for replying
             .OrderByDescending(score => score.Total)
+            .ThenByDescending(score => score.InsightDepth)
+            .ThenByDescending(score => score.RiskAdjustedValue)
+            .ThenByDescending(score => score.Specificity)
+            .ThenBy(score => score.GenericPraisePenalty)
+            .ThenBy(score => score.HallucinationPenalty)
             .ToArray();
 
         if (filtered.Length == 0)
