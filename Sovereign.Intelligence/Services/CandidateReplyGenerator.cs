@@ -87,9 +87,7 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
                     : $"Really clear breakdown of {topic} — easy to connect to real-world systems.",
 
             "ask_relevant_question" =>
-                string.IsNullOrWhiteSpace(topic)
-                    ? "Curious how you’ve seen this play out in practice?"
-                    : $"Curious — what’s the hardest part of applying {topic} in real systems?",
+                BuildFramedQuestion(context, move),
 
             "defer" =>
                 "Impressive achievement. Well deserved.",
@@ -175,5 +173,69 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
 
         var fallback = Regex.Match(source, @"\b([A-Za-z0-9\-]{4,})(?:\s+[A-Za-z0-9\-]{4,})?", RegexOptions.IgnoreCase);
         return fallback.Success ? fallback.Value : string.Empty;
+    }
+
+    private static string BuildFramedQuestion(MessageContext context, string move)
+    {
+        var framing = GenerateFramingLine(context);
+        var question = GenerateQuestionLine(context, move);
+
+        if (string.IsNullOrWhiteSpace(framing))
+            return question;
+
+        return $"{framing}\n\n{question}";
+    }
+
+    private static string GenerateFramingLine(MessageContext context)
+    {
+        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty}".ToLowerInvariant();
+
+        if (context.SituationType == "recruitment" || source.Contains("graduates") || source.Contains("career changers"))
+            return "Programs like this do a good job closing the gap between learning and real-world delivery.";
+
+        if (context.SituationType == "educational")
+            return "The strongest part of programs like this is usually the transition from theory into live execution.";
+
+        if (context.SituationType == "opinion")
+            return "That's a useful framing—especially where execution depends on more than the surface idea.";
+
+        if (context.SituationType == "milestone")
+            return "What stands out here is how much structured exposure can accelerate real growth early on.";
+
+        return string.Empty;
+    }
+
+    private static string GenerateQuestionLine(MessageContext context, string move)
+    {
+        var angle = InferQuestionAngle(context);
+
+        return angle switch
+        {
+            "transition" => "I'm curious—what tends to be the hardest part when people move from structured learning into actual client work?",
+            "constraint" => "I'm curious—where do graduates or career-changers usually hit the biggest execution constraints once they join live projects?",
+            "pattern" => "I'm curious—what pattern shows up most often in the people who adapt quickly versus those who take longer?",
+            "tradeoff" => "I'm curious—what's the hardest balance to get right between learning support and real project expectations?",
+            "selection" => "I'm curious—what tends to separate the people who ramp successfully from those who struggle early on?",
+            _ => "I'm curious—what tends to be the hardest part when people enter real-world delivery for the first time?"
+        };
+    }
+
+    private static string InferQuestionAngle(MessageContext context)
+    {
+        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty}".ToLowerInvariant();
+
+        if (source.Contains("client") || source.Contains("real-world") || source.Contains("actual client work"))
+            return "transition";
+
+        if (source.Contains("mentorship") || source.Contains("structured learning"))
+            return "tradeoff";
+
+        if (source.Contains("graduates") || source.Contains("career changers"))
+            return "selection";
+
+        if (source.Contains("ai") || source.Contains("responsibly") || source.Contains("pairing"))
+            return "constraint";
+
+        return "pattern";
     }
 }

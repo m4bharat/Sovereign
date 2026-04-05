@@ -30,6 +30,11 @@ public sealed class DecisionV2PromptBuilder
         sb.AppendLine("- Do not sound robotic, preachy, or generic.");
         sb.AppendLine("- Do not hallucinate facts.");
         sb.AppendLine("- Use SourceText and ParentContextText as primary context when present.");
+        sb.AppendLine("- For questions on high-signal posts (educational, opinion, recruitment, milestone, opportunity):");
+        sb.AppendLine("  - Never emit bare questions. Always include framing statements first.");
+        sb.AppendLine("  - Use specific angles: constraint, trade-off, pattern, transition, selection.");
+        sb.AppendLine("  - Ban generic stems like 'What do you think?', 'Can you share more?', 'What's the biggest challenge?'.");
+        sb.AppendLine("  - Examples: 'Programs like this close the learning-to-production gap well. I'm curious—what tends to be the hardest part when graduates first enter real client work?'");
         sb.AppendLine();
 
         AppendLineIfPresent(sb, "SituationType", context.SituationType);

@@ -15,6 +15,7 @@ public sealed class CandidateScore
     public double InsightDepth { get; init; }
     public double GenericPraisePenalty { get; init; }
     public double EngagementCost { get; init; }
+    public double QuestionQuality { get; init; }
 
     private double? _totalOverride;
 
@@ -26,6 +27,7 @@ public sealed class CandidateScore
                (0.16 * Specificity) +
                (0.16 * InsightDepth) +
                (0.10 * RelationshipFit) +
+               (0.06 * QuestionQuality) +
                (0.06 * Tone) +
                (0.04 * Brevity) +
                (0.06 * TimingFit) -

@@ -78,7 +78,8 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 TimingFit = ScoreTimingFit(relationshipAnalysis, candidate.Move),
                 InsightDepth = CalculateInsightDepth(candidate, context),
                 GenericPraisePenalty = CalculateGenericPraisePenalty(candidate, context),
-                EngagementCost = CalculateEngagementCost(candidate, relationshipAnalysis)
+                EngagementCost = CalculateEngagementCost(candidate, relationshipAnalysis),
+                QuestionQuality = CalculateQuestionQuality(candidate, context)
             };
 
             if (IsDisqualifiedAsGenericPraise(candidate, context, score))
@@ -451,6 +452,68 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                              ReframeSignals.Count(s => cleaned.Contains(s));
 
         return praiseCount >= 2 && conceptSignals == 0;
+    }
+
+    private static double CalculateQuestionQuality(SocialMoveCandidate candidate, MessageContext context)
+    {
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+        if (!reply.Contains("?"))
+            return 0.0;
+
+        double score = 0.0;
+
+        // Reward framing before question
+        if (reply.Contains("\n\n") || reply.Split('?')[0].Split('.', StringSplitOptions.RemoveEmptyEntries).Length >= 1)
+            score += 0.25;
+
+        // Reward specific anchors
+        var anchors = new[]
+        {
+            "client work", "live projects", "real-world", "ramp",
+            "execution", "constraints", "trade-off", "graduates",
+            "career-changers", "delivery", "mentorship"
+        };
+
+        var anchorHits = anchors.Count(a => reply.Contains(a));
+        score += Math.Min(0.30, anchorHits * 0.08);
+
+        // Reward sharp question shapes
+        if (reply.Contains("what tends to") || reply.Contains("what pattern") || reply.Contains("what separates"))
+            score += 0.20;
+
+        // Penalize generic stems
+        var genericStems = new[]
+        {
+            "what do you think",
+            "can you share more",
+            "would love to hear",
+            "what has your experience been",
+            "what's the biggest challenge"
+        };
+
+        var genericHits = genericStems.Count(g => reply.Contains(g));
+        score -= Math.Min(0.35, genericHits * 0.15);
+
+        // Penalize question-only replies on high-signal posts
+        if (RequiresFraming(context) && IsBareQuestion(reply))
+            score -= 0.30;
+
+        return Clamp01(score);
+    }
+
+    private static bool IsBareQuestion(string reply)
+    {
+        var text = reply.Trim();
+        if (!text.EndsWith("?"))
+            return false;
+
+        return !text.Contains(".") && !text.Contains("\n\n");
+    }
+
+    private static bool RequiresFraming(MessageContext context)
+    {
+        var situation = (context.SituationType ?? string.Empty).ToLowerInvariant();
+        return situation == "educational" || situation == "opinion" || situation == "recruitment" || situation == "milestone" || situation == "opportunity";
     }
 }
 

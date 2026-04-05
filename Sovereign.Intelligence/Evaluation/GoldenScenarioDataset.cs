@@ -815,6 +815,72 @@ namespace Sovereign.Intelligence.Evaluation
                 ShouldReply = true,
                 MaxReplyLength = 140
             };
+
+            yield return new GoldenScenario
+            {
+                CaseName = "Educational Post - Framed Question",
+                InputPayload = new DecisionV2Input
+                {
+                    UserId = "user1",
+                    ContactId = "educator1",
+                    Message = "Interesting perspective",
+                    Platform = "linkedin",
+                    Surface = "post_compose",
+                    SourceAuthor = "Professor Smith",
+                    SourceText = "Programs that bridge learning to production are crucial for graduates. The transition from theory to real client work is where most growth happens.",
+                    RelationshipRole = "Peer",
+                    LastInteractionDays = 14,
+                    TotalInteractions = 8,
+                    ReciprocityScore = 0.6,
+                    MomentumScore = 0.5,
+                    PowerDifferential = 0.1,
+                    EmotionalTemperature = 0.7,
+                    RecentRelationshipSummary = "Professional respect, shared interests in education",
+                    RelevantMemories = new List<string> { "discussed career development" },
+                    AllowNoReply = true,
+                    RequestAlternatives = true
+                },
+                ExpectedMoveFamily = "ask_relevant_question",
+                AllowedMoveSynonyms = new List<string> { "add_insight" },
+                ForbiddenBehaviors = new List<string> { "no_reply", "bare_question" },
+                AcceptableReplies = new List<string> { "transition", "graduates", "client work", "hardest part", "real-world" },
+                ForbiddenReplyPatterns = new List<string> { "what do you think", "can you share more", "what's the biggest challenge" },
+                ShouldReply = true,
+                MaxReplyLength = 250
+            };
+
+            yield return new GoldenScenario
+            {
+                CaseName = "Recruitment Post - Framed Question",
+                InputPayload = new DecisionV2Input
+                {
+                    UserId = "user1",
+                    ContactId = "recruiter1",
+                    Message = "Good program",
+                    Platform = "linkedin",
+                    Surface = "post_compose",
+                    SourceAuthor = "HR Director",
+                    SourceText = "Our graduate program has placed 95% of participants in full-time roles within 3 months. Career changers also benefit greatly.",
+                    RelationshipRole = "Peer",
+                    LastInteractionDays = 21,
+                    TotalInteractions = 12,
+                    ReciprocityScore = 0.7,
+                    MomentumScore = 0.6,
+                    PowerDifferential = 0.2,
+                    EmotionalTemperature = 0.8,
+                    RecentRelationshipSummary = "Professional networking, career discussions",
+                    RelevantMemories = new List<string> { "shared job search experiences" },
+                    AllowNoReply = true,
+                    RequestAlternatives = false
+                },
+                ExpectedMoveFamily = "ask_relevant_question",
+                AllowedMoveSynonyms = new List<string> { "appreciate" },
+                ForbiddenBehaviors = new List<string> { "no_reply", "bare_question" },
+                AcceptableReplies = new List<string> { "programs", "graduates", "career changers", "ramp successfully", "hardest balance" },
+                ForbiddenReplyPatterns = new List<string> { "what do you think", "can you share more", "what's the biggest challenge" },
+                ShouldReply = true,
+                MaxReplyLength = 280
+            };
         }
     }
 }
