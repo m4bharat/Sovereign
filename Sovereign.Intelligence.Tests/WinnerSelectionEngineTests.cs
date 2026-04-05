@@ -15,16 +15,32 @@ public class WinnerSelectionEngineTests
         // Arrange
         var scores = new List<CandidateScore>
         {
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, Total = 0.4, Tone = 0.3, HallucinationPenalty = 0.2 },
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, Total = 0.5, Tone = 0.3, HallucinationPenalty = 0.2 }
+            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, ComputedTotal = 0.4, Tone = 0.3, HallucinationPenalty = 0.2 },
+            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, ComputedTotal = 0.44, Tone = 0.3, HallucinationPenalty = 0.2 }
         };
 
         // Act
-        var result = _engine.SelectBest(scores);
+        var result = _engine.SelectBest(scores, new MessageContext());
 
         // Assert
         Assert.Equal("no_reply", result.Winner.Move);
         Assert.Contains("No candidate met the minimum threshold", result.Winner.Rationale);
+    }
+
+    [Fact]
+    public void SelectBest_ShouldReturnReply_WhenScoreJustAboveRelaxedThreshold()
+    {
+        // Arrange
+        var scores = new List<CandidateScore>
+        {
+            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, ComputedTotal = 0.46, Tone = 0.3, HallucinationPenalty = 0.1 }
+        };
+
+        // Act
+        var result = _engine.SelectBest(scores, new MessageContext());
+
+        // Assert
+        Assert.Equal("praise", result.Winner.Move);
     }
 
     [Fact]
@@ -40,13 +56,13 @@ public class WinnerSelectionEngineTests
 
         var scores = new List<CandidateScore>
         {
-            new CandidateScore { Candidate = candidates[0], Total = 0.9, Tone = 0.8, HallucinationPenalty = 0.1 },
-            new CandidateScore { Candidate = candidates[1], Total = 0.8, Tone = 0.7, HallucinationPenalty = 0.1 },
-            new CandidateScore { Candidate = candidates[2], Total = 0.7, Tone = 0.6, HallucinationPenalty = 0.1 }
+            new CandidateScore { Candidate = candidates[0], ComputedTotal = 0.9, Tone = 0.8, HallucinationPenalty = 0.1 },
+            new CandidateScore { Candidate = candidates[1], ComputedTotal = 0.8, Tone = 0.7, HallucinationPenalty = 0.1 },
+            new CandidateScore { Candidate = candidates[2], ComputedTotal = 0.7, Tone = 0.6, HallucinationPenalty = 0.1 }
         };
 
         // Act
-        var result = _engine.SelectBest(scores);
+        var result = _engine.SelectBest(scores, new MessageContext());
 
         // Assert
         Assert.Equal("congratulate", result.Winner.Move);
@@ -67,12 +83,12 @@ public class WinnerSelectionEngineTests
 
         var scores = new List<CandidateScore>
         {
-            new CandidateScore { Candidate = candidates[0], Total = 0.85, Tone = 0.8, HallucinationPenalty = 0.1, RiskAdjustedValue = 0.6 },
-            new CandidateScore { Candidate = candidates[1], Total = 0.85, Tone = 0.8, HallucinationPenalty = 0.1, RiskAdjustedValue = 0.8 }
+            new CandidateScore { Candidate = candidates[0], ComputedTotal = 0.85, Tone = 0.8, HallucinationPenalty = 0.1, RiskAdjustedValue = 0.6 },
+            new CandidateScore { Candidate = candidates[1], ComputedTotal = 0.85, Tone = 0.8, HallucinationPenalty = 0.1, RiskAdjustedValue = 0.8 }
         };
 
         // Act
-        var result = _engine.SelectBest(scores);
+        var result = _engine.SelectBest(scores, new MessageContext());
 
         // Assert
         Assert.Equal("add_insight", result.Winner.Move);
@@ -84,12 +100,12 @@ public class WinnerSelectionEngineTests
         // Arrange
         var scores = new List<CandidateScore>
         {
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, Total = 0.8, Tone = 0.8, HallucinationPenalty = 0.5 },
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, Total = 0.7, Tone = 0.7, HallucinationPenalty = 0.1 }
+            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, ComputedTotal = 0.8, Tone = 0.8, HallucinationPenalty = 0.5 },
+            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, ComputedTotal = 0.7, Tone = 0.7, HallucinationPenalty = 0.1 }
         };
 
         // Act
-        var result = _engine.SelectBest(scores);
+        var result = _engine.SelectBest(scores, new MessageContext());
 
         // Assert
         Assert.Equal("praise", result.Winner.Move);
@@ -101,12 +117,12 @@ public class WinnerSelectionEngineTests
         // Arrange
         var scores = new List<CandidateScore>
         {
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, Total = 0.8, Tone = 0.1, HallucinationPenalty = 0.1 },
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, Total = 0.7, Tone = 0.8, HallucinationPenalty = 0.1 }
+            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, ComputedTotal = 0.8, Tone = 0.1, HallucinationPenalty = 0.1 },
+            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, ComputedTotal = 0.7, Tone = 0.8, HallucinationPenalty = 0.1 }
         };
 
         // Act
-        var result = _engine.SelectBest(scores);
+        var result = _engine.SelectBest(scores, new MessageContext());
 
         // Assert
         Assert.Equal("praise", result.Winner.Move);

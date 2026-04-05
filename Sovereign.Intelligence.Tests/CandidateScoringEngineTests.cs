@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
@@ -169,5 +170,46 @@ public class CandidateScoringEngineTests
         // Assert
         Assert.True(scores[0].Total > scores[1].Total, "Relationship-aware move should score higher");
         Assert.True(scores[0].RelationshipFit > scores[1].RelationshipFit);
+    }
+
+    [Fact]
+    public void Score_ShouldPenalizeWeakCtaFormFillReplies()
+    {
+        // Arrange
+        var candidates = new List<SocialMoveCandidate>
+        {
+            new SocialMoveCandidate
+            {
+                Move = "answer_supportively",
+                Reply = "Great question! I'm currently a junior developer, and the next skill I'm tackling is Kubernetes — excited to get some hands-on experience with clusters.",
+                RequiresPolish = false
+            },
+            new SocialMoveCandidate
+            {
+                Move = "answer_supportively",
+                Reply = "I'm currently coming from the developer side, and Kubernetes is the next area I'm focusing on. It feels like that's where DevOps concepts start becoming operational instead of theoretical.",
+                RequiresPolish = false
+            }
+        };
+
+        var situation = new SocialSituation { Type = "question" };
+        var context = new MessageContext
+        {
+            Message = "Where are you right now and what are you learning next?",
+            SourceText = "This is a CTA post — comment below where you are right now and what you're learning next.",
+            ParentContextText = string.Empty,
+            NearbyContextText = string.Empty
+        };
+        var relationship = new RelationshipAnalysis { ReciprocityScore = 0.7, ReplyUrgencyHint = 0.5 };
+
+        // Act
+        var scores = _engine.Score(candidates, situation, context, relationship);
+        var weakScore = scores.First(s => s.Candidate.Reply.StartsWith("Great question", StringComparison.OrdinalIgnoreCase));
+        var strongScore = scores.First(s => s.Candidate.Reply.Contains("operational"));
+
+        // Assert
+        Assert.True(strongScore.Total > weakScore.Total, "Positioned CTA participation should score higher than weak form-fill replies.");
+        Assert.True(weakScore.ParticipationWithoutPositionPenalty > 0.35, "Weak CTA reply should receive a substantial participation penalty.");
+        Assert.True(strongScore.PositioningStrength > weakScore.PositioningStrength, "Strong CTA reply should have noticeably better positioning strength.");
     }
 }

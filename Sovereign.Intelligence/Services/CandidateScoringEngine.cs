@@ -35,6 +35,22 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         "you see this a lot when"
     };
 
+    private static readonly string[] CtaSignals =
+    {
+        "drop in the comments",
+        "comment below",
+        "let me know",
+        "tell me",
+        "where are you right now",
+        "which skill",
+        "what are you learning next",
+        "what are you working on",
+        "share in the comments",
+        "comment your",
+        "reply with",
+        "what's your next step"
+    };
+
     private static readonly string[] GenericPraisePhrases =
     {
         "great post",
@@ -79,12 +95,19 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 InsightDepth = CalculateInsightDepth(candidate, context),
                 GenericPraisePenalty = CalculateGenericPraisePenalty(candidate, context),
                 EngagementCost = CalculateEngagementCost(candidate, relationshipAnalysis),
-                QuestionQuality = CalculateQuestionQuality(candidate, context)
+                QuestionQuality = CalculateQuestionQuality(candidate, context),
+                CTAResponseQuality = CalculateCTAResponseQuality(candidate, context),
+                PositioningStrength = CalculatePositioningStrength(candidate, context),
+                ParticipationWithoutPositionPenalty = CalculateParticipationWithoutPositionPenalty(candidate, context)
             };
 
-            if (IsDisqualifiedAsGenericPraise(candidate, context, score))
+            score.ComputedTotal = ComputeTotal(score, context);
+
+            if (IsDisqualifiedAsGenericPraise(candidate, context, score) ||
+                IsDisqualifiedForCtaPost(candidate, context, score) ||
+                (IsCtaEngagementPost(context) && !MeetsCtaThresholds(score)))
             {
-                score.Total = 0.0;
+                score.ComputedTotal = 0.0;
             }
 
             return score;
@@ -452,6 +475,245 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                              ReframeSignals.Count(s => cleaned.Contains(s));
 
         return praiseCount >= 2 && conceptSignals == 0;
+    }
+
+    private static double CalculateCTAResponseQuality(SocialMoveCandidate candidate, MessageContext context)
+    {
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(reply))
+            return 0.0;
+
+        double score = 0.0;
+
+        if (reply.Contains("i'm") || reply.Contains("i am") || reply.Contains("coming from") || reply.Contains("currently"))
+            score += 0.12;
+
+        var answersRole = reply.Contains("developer") ||
+                          reply.Contains("sysadmin") ||
+                          reply.Contains("fresher") ||
+                          reply.Contains("cloud") ||
+                          reply.Contains("engineer");
+
+        var answersNextSkill = reply.Contains("kubernetes") ||
+                               reply.Contains("terraform") ||
+                               reply.Contains("docker") ||
+                               reply.Contains("observability") ||
+                               reply.Contains("sre") ||
+                               reply.Contains("security") ||
+                               reply.Contains("ci/cd") ||
+                               reply.Contains("platform");
+
+        if (answersRole)
+            score += 0.10;
+        if (answersNextSkill)
+            score += 0.10;
+
+        if (reply.Contains("because") || reply.Contains("feels like") || reply.Contains("where") || reply.Contains("so that"))
+            score += 0.18;
+
+        var conceptSignals = new[]
+        {
+            "orchestration", "reliability", "deployment", "production",
+            "scale", "infra", "systems thinking", "delivery",
+            "automation", "observability", "platform", "execution"
+        };
+
+        var conceptHits = conceptSignals.Count(c => reply.Contains(c));
+        score += Math.Min(0.25, conceptHits * 0.07);
+
+        if (reply.Contains(".") || reply.Contains("—") || reply.Contains(":"))
+            score += 0.10;
+
+        if (reply.Contains("excited to") || reply.Contains("looking forward to"))
+            score -= 0.15;
+
+        return Clamp01(score);
+    }
+
+    private static double CalculatePositioningStrength(SocialMoveCandidate candidate, MessageContext context)
+    {
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(reply))
+            return 0.0;
+
+        double score = 0.0;
+
+        var positioningSignals = new[]
+        {
+            "the inflection point",
+            "where devops becomes",
+            "where it starts becoming real",
+            "beyond just code",
+            "thinking in terms of",
+            "from writing code to",
+            "production reality",
+            "real-world delivery",
+            "operational",
+            "systems thinking",
+            "that’s the layer where",
+            "the shift is",
+            "the real challenge is"
+        };
+
+        var signalHits = positioningSignals.Count(s => reply.Contains(s));
+        score += Math.Min(0.45, signalHits * 0.12);
+
+        if (reply.Contains("instead of") || reply.Contains("rather than") || reply.Contains("not just"))
+            score += 0.15;
+
+        if (reply.Contains("focusing on") && (reply.Contains("because") || reply.Contains("where")))
+            score += 0.15;
+
+        var conceptNouns = new[]
+        {
+            "reliability", "orchestration", "deployment", "delivery",
+            "production", "automation", "infrastructure", "systems", "operations"
+        };
+
+        var nounHits = conceptNouns.Count(n => reply.Contains(n));
+        score += Math.Min(0.20, nounHits * 0.05);
+
+        return Clamp01(score);
+    }
+
+    private static double CalculateParticipationWithoutPositionPenalty(SocialMoveCandidate candidate, MessageContext context)
+    {
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(reply))
+            return 0.0;
+
+        double penalty = 0.0;
+
+        var hasRoleAnswer =
+            reply.Contains("i'm currently") ||
+            reply.Contains("i am currently") ||
+            reply.Contains("coming from") ||
+            reply.Contains("i'm a") ||
+            reply.Contains("i am a");
+
+        var hasSkillAnswer =
+            reply.Contains("next skill") ||
+            reply.Contains("i'm learning") ||
+            reply.Contains("i am learning") ||
+            reply.Contains("i'm focusing on") ||
+            reply.Contains("the next skill") ||
+            reply.Contains("kubernetes") ||
+            reply.Contains("terraform") ||
+            reply.Contains("docker");
+
+        var hasReasoning =
+            reply.Contains("because") ||
+            reply.Contains("feels like") ||
+            reply.Contains("where") ||
+            reply.Contains("the shift is") ||
+            reply.Contains("that’s where") ||
+            reply.Contains("that's where") ||
+            reply.Contains("not just");
+
+        var hasConcept =
+            reply.Contains("orchestration") ||
+            reply.Contains("reliability") ||
+            reply.Contains("deployment") ||
+            reply.Contains("production") ||
+            reply.Contains("infra") ||
+            reply.Contains("systems");
+
+        if (hasRoleAnswer && hasSkillAnswer && !hasReasoning && !hasConcept)
+            penalty += 0.50;
+
+        if (reply.Contains("great question"))
+            penalty += 0.20;
+
+        if (reply.Contains("excited to") && !hasReasoning && !hasConcept)
+            penalty += 0.25;
+
+        var words = reply.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        if (words <= 18 && hasRoleAnswer && hasSkillAnswer && !hasReasoning && !hasConcept)
+            penalty += 0.20;
+
+        return Clamp01(penalty);
+    }
+
+    private static bool IsCtaEngagementPost(MessageContext context)
+    {
+        var source = string.Join(" ",
+            context.SourceTitle ?? string.Empty,
+            context.SourceText ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty)
+            .ToLowerInvariant();
+
+        return CtaSignals.Any(signal => source.Contains(signal));
+    }
+
+    private static bool IsDisqualifiedForCtaPost(
+        SocialMoveCandidate candidate,
+        MessageContext context,
+        CandidateScore score)
+    {
+        if (!IsCtaEngagementPost(context))
+            return false;
+
+        var reply = (candidate.Reply ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(reply))
+            return false;
+
+        if (score.ParticipationWithoutPositionPenalty >= 0.45 &&
+            score.PositioningStrength <= 0.16 &&
+            score.InsightDepth <= 0.16)
+        {
+            return true;
+        }
+
+        if (reply.StartsWith("Great question", StringComparison.OrdinalIgnoreCase) &&
+            score.PositioningStrength <= 0.18 &&
+            score.CTAResponseQuality <= 0.30)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool MeetsCtaThresholds(CandidateScore score)
+    {
+        return score.CTAResponseQuality >= 0.24 &&
+               (score.PositioningStrength >= 0.18 || score.InsightDepth >= 0.18) &&
+               score.ParticipationWithoutPositionPenalty <= 0.40;
+    }
+
+    private static double ComputeTotal(CandidateScore score, MessageContext context)
+    {
+        if (IsCtaEngagementPost(context))
+        {
+            return (0.18 * score.Relevance) +
+                   (0.12 * score.SocialFit) +
+                   (0.12 * score.Specificity) +
+                   (0.12 * score.InsightDepth) +
+                   (0.10 * score.RelationshipFit) +
+                   (0.12 * score.CTAResponseQuality) +
+                   (0.10 * score.PositioningStrength) +
+                   (0.05 * score.Tone) +
+                   (0.03 * score.Brevity) +
+                   (0.04 * score.TimingFit) -
+                   (0.14 * score.HallucinationPenalty) -
+                   (0.08 * score.GenericPraisePenalty) -
+                   (0.12 * score.ParticipationWithoutPositionPenalty) -
+                   (0.08 * score.EngagementCost);
+        }
+
+        return (0.22 * score.Relevance) +
+               (0.16 * score.SocialFit) +
+               (0.16 * score.Specificity) +
+               (0.16 * score.InsightDepth) +
+               (0.10 * score.RelationshipFit) +
+               (0.06 * score.QuestionQuality) +
+               (0.06 * score.Tone) +
+               (0.04 * score.Brevity) +
+               (0.06 * score.TimingFit) -
+               (0.18 * score.HallucinationPenalty) -
+               (0.12 * score.GenericPraisePenalty) -
+               (0.08 * score.EngagementCost);
     }
 
     private static double CalculateQuestionQuality(SocialMoveCandidate candidate, MessageContext context)

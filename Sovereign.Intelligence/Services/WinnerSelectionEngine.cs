@@ -5,15 +5,20 @@ namespace Sovereign.Intelligence.Services;
 
 public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
 {
-    public WinnerSelectionResult SelectBest(IReadOnlyList<CandidateScore> scoredCandidates)
+    public WinnerSelectionResult SelectBest(IReadOnlyList<CandidateScore> scoredCandidates, MessageContext context)
     {
         var filtered = scoredCandidates
             .Where(score => score.HallucinationPenalty < 0.35)
             .Where(score => score.Tone >= 0.20)
-            .Where(score => score.Total > 0.5) // Minimum threshold for replying
+            .Where(score => score.Total >= 0.45) // Minimum threshold for replying
             .Where(score => !IsLowQualityQuestion(score))
+            .Where(score => !IsDisqualifiedForCtaPost(score.Candidate, context, score))
+            .Where(score => !IsCtaEngagementPost(context) || MeetsCtaThresholds(score))
             .OrderByDescending(score => score.Total)
+            .ThenByDescending(score => score.PositioningStrength)
+            .ThenByDescending(score => score.CTAResponseQuality)
             .ThenByDescending(score => score.InsightDepth)
+            .ThenBy(score => score.ParticipationWithoutPositionPenalty)
             .ThenByDescending(score => score.RiskAdjustedValue)
             .ThenByDescending(score => score.Specificity)
             .ThenBy(score => score.GenericPraisePenalty)
@@ -81,5 +86,69 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
         // For now, only disqualify if it's clearly a bare question on a high-signal post
         // We'll need to pass context through to make this more accurate
         return false; // Temporarily disable to avoid breaking existing tests
+    }
+
+    private static readonly string[] CtaSignals =
+    {
+        "drop in the comments",
+        "comment below",
+        "let me know",
+        "tell me",
+        "where are you right now",
+        "which skill",
+        "what are you learning next",
+        "what are you working on",
+        "share in the comments",
+        "comment your",
+        "reply with",
+        "what's your next step"
+    };
+
+    private static bool IsCtaEngagementPost(MessageContext context)
+    {
+        var source = string.Join(" ",
+            context.SourceTitle ?? string.Empty,
+            context.SourceText ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty)
+            .ToLowerInvariant();
+
+        return CtaSignals.Any(signal => source.Contains(signal));
+    }
+
+    private static bool MeetsCtaThresholds(CandidateScore score)
+    {
+        return score.CTAResponseQuality >= 0.24 &&
+               (score.PositioningStrength >= 0.18 || score.InsightDepth >= 0.18) &&
+               score.ParticipationWithoutPositionPenalty <= 0.40;
+    }
+
+    private static bool IsDisqualifiedForCtaPost(
+        SocialMoveCandidate candidate,
+        MessageContext context,
+        CandidateScore score)
+    {
+        if (!IsCtaEngagementPost(context))
+            return false;
+
+        var reply = (candidate.Reply ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(reply))
+            return false;
+
+        if (score.ParticipationWithoutPositionPenalty >= 0.45 &&
+            score.PositioningStrength <= 0.16 &&
+            score.InsightDepth <= 0.16)
+        {
+            return true;
+        }
+
+        if (reply.StartsWith("Great question", StringComparison.OrdinalIgnoreCase) &&
+            score.PositioningStrength <= 0.18 &&
+            score.CTAResponseQuality <= 0.30)
+        {
+            return true;
+        }
+
+        return false;
     }
 }

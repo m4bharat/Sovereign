@@ -68,7 +68,7 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         var moveCandidates = _socialMovePlanner.Plan(situation, relationshipAnalysis);
         var replyCandidates = _candidateReplyGenerator.Generate(moveCandidates, messageContext);
         var scoredCandidates = _candidateScoringEngine.Score(replyCandidates, situation, messageContext, relationshipAnalysis);
-        var winnerSelection = _winnerSelectionEngine.SelectBest(scoredCandidates);
+        var winnerSelection = _winnerSelectionEngine.SelectBest(scoredCandidates, messageContext);
         var winner = winnerSelection.Winner;
 
         if (ShouldSkipReply(winner))

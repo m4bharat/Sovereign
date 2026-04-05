@@ -43,13 +43,13 @@ namespace Sovereign.Intelligence.Tests
             var mockScoringEngine = new Mock<ICandidateScoringEngine>();
             var scores = new List<CandidateScore>
             {
-                new CandidateScore { Candidate = moves[0], Total = 0.8 }
+                new CandidateScore { Candidate = moves[0], ComputedTotal = 0.8 }
             };
             mockScoringEngine.Setup(s => s.Score(It.IsAny<IReadOnlyList<SocialMoveCandidate>>(), It.IsAny<SocialSituation>(), It.IsAny<MessageContext>(), It.IsAny<RelationshipAnalysis>()))
                 .Returns(scores);
 
             var mockWinnerSelector = new Mock<IWinnerSelectionEngine>();
-            mockWinnerSelector.Setup(w => w.SelectBest(It.IsAny<IReadOnlyList<CandidateScore>>()))
+            mockWinnerSelector.Setup(w => w.SelectBest(It.IsAny<IReadOnlyList<CandidateScore>>(), It.IsAny<MessageContext>()))
                 .Returns(new WinnerSelectionResult { Winner = moves[0], Alternatives = new List<SocialMoveCandidate>() });
 
             var mockLlmClient = new Mock<ILlmClient>();
@@ -102,13 +102,13 @@ namespace Sovereign.Intelligence.Tests
             var mockScoringEngine = new Mock<ICandidateScoringEngine>();
             var scores = new List<CandidateScore>
             {
-                new CandidateScore { Candidate = moves[0], Total = 0.8 }
+                new CandidateScore { Candidate = moves[0], ComputedTotal = 0.8 }
             };
             mockScoringEngine.Setup(s => s.Score(It.IsAny<IReadOnlyList<SocialMoveCandidate>>(), It.IsAny<SocialSituation>(), It.IsAny<MessageContext>(), It.IsAny<RelationshipAnalysis>()))
                 .Returns(scores);
 
             var mockWinnerSelector = new Mock<IWinnerSelectionEngine>();
-            mockWinnerSelector.Setup(w => w.SelectBest(It.IsAny<IReadOnlyList<CandidateScore>>()))
+            mockWinnerSelector.Setup(w => w.SelectBest(It.IsAny<IReadOnlyList<CandidateScore>>(), It.IsAny<MessageContext>()))
                 .Returns(new WinnerSelectionResult { Winner = moves[0], Alternatives = new List<SocialMoveCandidate>() });
 
             var mockLlmClient = new Mock<ILlmClient>();

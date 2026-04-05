@@ -69,9 +69,11 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
                     : $"I agree, and I'd add that timing often plays a role with {topic}.",
 
             "answer_supportively" =>
-                string.IsNullOrWhiteSpace(topic)
-                    ? "That's a great question. In my experience, it depends on the context."
-                    : $"That's a thoughtful question about {topic}. In my experience, finding the right balance comes down to clarity and boundaries.",
+                RequiresCtaPositioning(context)
+                    ? BuildCtaParticipationReply(context)
+                    : string.IsNullOrWhiteSpace(topic)
+                        ? "That's a great question. In my experience, it depends on the context."
+                        : $"That's a thoughtful question about {topic}. In my experience, finding the right balance comes down to clarity and boundaries.",
 
             "acknowledge_update" =>
                 string.IsNullOrWhiteSpace(topic)
@@ -237,5 +239,96 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
             return "constraint";
 
         return "pattern";
+    }
+
+    private static bool IsCtaEngagementPost(MessageContext context)
+    {
+        var source = string.Join(" ",
+            context.SourceTitle ?? string.Empty,
+            context.SourceText ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty)
+            .ToLowerInvariant();
+
+        var signals = new[]
+        {
+            "drop in the comments",
+            "comment below",
+            "let me know",
+            "tell me",
+            "where are you right now",
+            "which skill",
+            "what are you learning next",
+            "what are you working on",
+            "share in the comments",
+            "comment your",
+            "reply with",
+            "what's your next step"
+        };
+
+        return signals.Any(signal => source.Contains(signal));
+    }
+
+    private static bool RequiresCtaPositioning(MessageContext context)
+    {
+        return IsCtaEngagementPost(context);
+    }
+
+    private static string BuildCtaParticipationReply(MessageContext context)
+    {
+        var role = InferCtaRole(context);
+        var skill = InferCtaSkill(context);
+        var concept = InferCtaConcept(skill);
+        var skillText = string.IsNullOrWhiteSpace(skill) ? "the next area I'm focusing on" : skill;
+
+        return $"I'm currently coming from the {role} side, and {skillText} is the next area I'm focusing on. It feels like that's where the shift moves from theory into {concept}.";
+    }
+
+    private static string InferCtaRole(MessageContext context)
+    {
+        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty} {context.ParentContextText ?? string.Empty} {context.NearbyContextText ?? string.Empty}".ToLowerInvariant();
+
+        if (source.Contains("sysadmin"))
+            return "sysadmin";
+        if (source.Contains("engineer"))
+            return "engineering";
+        if (source.Contains("developer"))
+            return "developer";
+        if (source.Contains("manager"))
+            return "manager";
+
+        return "developer";
+    }
+
+    private static string InferCtaSkill(MessageContext context)
+    {
+        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty} {context.ParentContextText ?? string.Empty} {context.NearbyContextText ?? string.Empty}".ToLowerInvariant();
+        var skills = new[] { "kubernetes", "terraform", "docker", "observability", "sre", "security", "ci/cd", "platform" };
+
+        foreach (var skill in skills)
+        {
+            if (source.Contains(skill))
+                return skill;
+        }
+
+        return string.Empty;
+    }
+
+    private static string InferCtaConcept(string skill)
+    {
+        var s = (skill ?? string.Empty).ToLowerInvariant();
+
+        if (s.Contains("kubernetes"))
+            return "orchestration and reliability";
+        if (s.Contains("terraform"))
+            return "infrastructure thinking at scale";
+        if (s.Contains("docker"))
+            return "repeatable deployment patterns";
+        if (s.Contains("observability"))
+            return "system visibility and operational feedback";
+        if (s.Contains("sre"))
+            return "reliability and production discipline";
+
+        return "real-world delivery";
     }
 }

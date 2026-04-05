@@ -5,5 +5,5 @@ using Sovereign.Intelligence.Services;
 
 public interface IWinnerSelectionEngine
 {
-    WinnerSelectionResult SelectBest(IReadOnlyList<CandidateScore> scoredCandidates);
+    WinnerSelectionResult SelectBest(IReadOnlyList<CandidateScore> scoredCandidates, MessageContext context);
 }
