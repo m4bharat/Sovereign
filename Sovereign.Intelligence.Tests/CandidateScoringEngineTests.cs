@@ -213,4 +213,64 @@ public class CandidateScoringEngineTests
         Assert.True(weakScore.ParticipationWithoutPositionPenalty > 0.35, "Weak CTA reply should receive a substantial participation penalty.");
         Assert.True(strongScore.PositioningStrength > weakScore.PositioningStrength, "Strong CTA reply should have noticeably better positioning strength.");
     }
+
+    [Fact]
+    public void Score_ShouldPenalizeGenericPraiseReplies()
+    {
+        // Arrange
+        var candidates = new List<SocialMoveCandidate>
+        {
+            new SocialMoveCandidate { Move = "praise", Reply = "Great job!", RequiresPolish = false },
+            new SocialMoveCandidate { Move = "praise", Reply = "Awesome work!", RequiresPolish = false },
+            new SocialMoveCandidate { Move = "praise", Reply = "Well done!", RequiresPolish = false }
+        };
+
+        var situation = new SocialSituation { Type = "milestone" };
+        var context = new MessageContext
+        {
+            Message = "I completed the project",
+            SourceText = "Just finished a major project at work!"
+        };
+        var relationship = new RelationshipAnalysis { ReciprocityScore = 0.8 };
+
+        // Act
+        var scores = _engine.Score(candidates, situation, context, relationship);
+
+        // Assert
+        foreach (var score in scores)
+        {
+            Assert.True(score.GenericPenalty > 0.0, $"Generic reply '{score.Candidate.Reply}' should receive a penalty");
+            Assert.True(score.Total < 0.5, $"Generic reply should have low total score due to penalty");
+        }
+    }
+
+    [Fact]
+    public void Score_ShouldPenalizeShortFillerReplies()
+    {
+        // Arrange
+        var candidates = new List<SocialMoveCandidate>
+        {
+            new SocialMoveCandidate { Move = "acknowledge", Reply = "Nice", RequiresPolish = false },
+            new SocialMoveCandidate { Move = "acknowledge", Reply = "Cool", RequiresPolish = false },
+            new SocialMoveCandidate { Move = "acknowledge", Reply = "Ok", RequiresPolish = false }
+        };
+
+        var situation = new SocialSituation { Type = "opinion" };
+        var context = new MessageContext
+        {
+            Message = "What do you think about this approach?",
+            SourceText = "I'm considering a new approach to this problem."
+        };
+        var relationship = new RelationshipAnalysis { ReciprocityScore = 0.6 };
+
+        // Act
+        var scores = _engine.Score(candidates, situation, context, relationship);
+
+        // Assert
+        foreach (var score in scores)
+        {
+            Assert.True(score.GenericPenalty > 0.0, $"Short filler reply '{score.Candidate.Reply}' should receive a penalty");
+            Assert.True(score.Total < 0.3, $"Short filler reply should have very low total score");
+        }
+    }
 }

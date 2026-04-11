@@ -71,6 +71,22 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         "clear breakdown"
     };
 
+    private static readonly string[] GenericPhrases =
+    {
+        "great point",
+        "great post",
+        "well said",
+        "so important",
+        "thanks for sharing",
+        "completely agree",
+        "love this",
+        "very insightful",
+        "this is so true",
+        "so true",
+        "good one",
+        "nice post"
+    };
+
     private static double Clamp01(double value) => Math.Clamp(value, 0.0, 1.0);
 
     public IReadOnlyList<CandidateScore> Score(
@@ -95,7 +111,7 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 TimingFit = ScoreTimingFit(relationshipAnalysis, candidate.Move),
                 InsightDepth = CalculateInsightDepth(candidate, context),
                 GenericPraisePenalty = CalculateGenericPraisePenalty(candidate, context),
-                GenericPenalty = ComputeGenericPenalty(candidate.Reply),
+                GenericPenalty = ComputeGenericPenalty(candidate.Reply, context),
                 EngagementCost = CalculateEngagementCost(candidate, relationshipAnalysis),
                 QuestionQuality = CalculateQuestionQuality(candidate, context),
                 CTAResponseQuality = CalculateCTAResponseQuality(candidate, context),
@@ -105,6 +121,9 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             candidate.GenericPenalty = score.GenericPenalty;
 
             score.ComputedTotal = ComputeTotal(score, context);
+
+            var specificityBoost = ComputeSpecificityBoost(candidate.Reply, context);
+            score.ComputedTotal += specificityBoost;
 
             if (IsDisqualifiedAsGenericPraise(candidate, context, score) ||
                 IsDisqualifiedForCtaPost(candidate, context, score) ||
@@ -444,6 +463,73 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         }
 
         return Math.Min(penalty, 0.45);
+    }
+
+    private static double ComputeGenericPenalty(
+        string? reply,
+        MessageContext context)
+    {
+        if (string.IsNullOrWhiteSpace(reply))
+            return 0.0;
+
+        var text = reply.Trim().ToLowerInvariant();
+        var penalty = 0.0;
+
+        foreach (var phrase in GenericPhrases)
+        {
+            if (text.Contains(phrase))
+            {
+                penalty += 0.18;
+            }
+        }
+
+        // Very short praise-only replies are usually low value.
+        if (text.Length < 20)
+        {
+            penalty += 0.04;
+        }
+
+        // If the reply does not reference anything specific while source text exists,
+        // it is more likely to be generic filler.
+        if (!string.IsNullOrWhiteSpace(context.SourceText))
+        {
+            var source = context.SourceText.ToLowerInvariant();
+
+            var hasSpecificOverlap =
+                source.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                      .Where(w => w.Length >= 5)
+                      .Distinct()
+                      .Any(w => text.Contains(w));
+
+            if (!hasSpecificOverlap)
+            {
+                penalty += 0.10;
+            }
+        }
+
+        return Math.Min(penalty, 0.45);
+    }
+
+    private static double ComputeSpecificityBoost(
+        string? reply,
+        MessageContext context)
+    {
+        if (string.IsNullOrWhiteSpace(reply) || string.IsNullOrWhiteSpace(context.SourceText))
+            return 0.0;
+
+        var text = reply.Trim().ToLowerInvariant();
+        var source = context.SourceText.ToLowerInvariant();
+
+        var overlapCount = source.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length >= 5)
+            .Distinct()
+            .Count(w => text.Contains(w));
+
+        if (overlapCount >= 3) return 0.12;
+        if (overlapCount >= 2) return 0.08;
+        if (overlapCount >= 1) return 0.04;
+
+        return 0.0;
     }
 
     /// <summary>
