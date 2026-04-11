@@ -273,4 +273,83 @@ public class CandidateScoringEngineTests
             Assert.True(score.Total < 0.3, $"Short filler reply should have very low total score");
         }
     }
+
+    [Fact]
+    public void Score_ShouldPreferActualAnswerOverGenericPraise_OnCtaPosts()
+    {
+        // Arrange
+        var candidates = new List<SocialMoveCandidate>
+        {
+            new SocialMoveCandidate
+            {
+                Move = "answer_question",
+                Reply = "Great question! I'd recommend starting with the fundamentals and building up from there.",
+                RequiresPolish = false
+            },
+            new SocialMoveCandidate
+            {
+                Move = "answer_question",
+                Reply = "In my experience, the key is to focus on practical application rather than theory.",
+                RequiresPolish = false
+            }
+        };
+
+        var situation = new SocialSituation { Type = "cta_or_question" };
+        var context = new MessageContext
+        {
+            Message = "How should I approach learning this technology?",
+            SourceText = "I'm looking to learn a new technology. What approach would you recommend? Any advice on getting started?"
+        };
+        var relationship = new RelationshipAnalysis { ReciprocityScore = 0.8 };
+
+        // Act
+        var scores = _engine.Score(candidates, situation, context, relationship);
+
+        // Assert
+        var genericScore = scores.First(s => s.Candidate.Reply.StartsWith("Great question", StringComparison.OrdinalIgnoreCase));
+        var concreteScore = scores.First(s => s.Candidate.Reply.Contains("experience"));
+
+        Assert.True(concreteScore.Total > genericScore.Total, "Concrete answer should score higher than generic praise on CTA posts.");
+        Assert.True(genericScore.CtaParticipationPenalty > 0.0, "Generic praise should receive CTA participation penalty.");
+        Assert.True(concreteScore.CtaParticipationPenalty < genericScore.CtaParticipationPenalty, "Concrete answer should have lower CTA penalty.");
+    }
+
+    [Fact]
+    public void Score_ShouldPreferConcreteOpinionOverGenericEngagement_OnCtaPosts()
+    {
+        // Arrange
+        var candidates = new List<SocialMoveCandidate>
+        {
+            new SocialMoveCandidate
+            {
+                Move = "add_specific_insight",
+                Reply = "I'd suggest considering the tradeoffs between monolithic and microservices architectures for your use case.",
+                RequiresPolish = false
+            },
+            new SocialMoveCandidate
+            {
+                Move = "light_touch_question",
+                Reply = "That's an interesting perspective. What challenges have you encountered?",
+                RequiresPolish = false
+            }
+        };
+
+        var situation = new SocialSituation { Type = "cta_or_question" };
+        var context = new MessageContext
+        {
+            Message = "What do you think about this architecture decision?",
+            SourceText = "We're deciding between monolithic and microservices. What are your thoughts on the tradeoffs?"
+        };
+        var relationship = new RelationshipAnalysis { ReciprocityScore = 0.7 };
+
+        // Act
+        var scores = _engine.Score(candidates, situation, context, relationship);
+
+        // Assert
+        var concreteScore = scores.First(s => s.Candidate.Reply.Contains("tradeoffs"));
+        var genericScore = scores.First(s => s.Candidate.Reply.Contains("interesting perspective"));
+
+        Assert.True(concreteScore.Total > genericScore.Total, "Concrete opinion should score higher than generic engagement on CTA posts.");
+        Assert.True(concreteScore.InsightDepth > genericScore.InsightDepth, "Concrete reply should have higher insight depth.");
+    }
 }

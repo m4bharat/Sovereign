@@ -116,7 +116,8 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 QuestionQuality = CalculateQuestionQuality(candidate, context),
                 CTAResponseQuality = CalculateCTAResponseQuality(candidate, context),
                 PositioningStrength = CalculatePositioningStrength(candidate, context),
-                ParticipationWithoutPositionPenalty = CalculateParticipationWithoutPositionPenalty(candidate, context)
+                ParticipationWithoutPositionPenalty = CalculateParticipationWithoutPositionPenalty(candidate, context),
+                CtaParticipationPenalty = ComputeCtaParticipationPenalty(candidate, context)
             };
             candidate.GenericPenalty = score.GenericPenalty;
 
@@ -559,6 +560,83 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return Clamp01(cost);
     }
 
+    private static bool LooksLikeCtaOrQuestion(MessageContext context)
+    {
+        var source = (context.SourceText ?? string.Empty).Trim().ToLowerInvariant();
+        var draft = (context.Message ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (source.Contains("?") || draft.Contains("?"))
+            return true;
+
+        var ctaMarkers = new[]
+        {
+            "how ",
+            "what ",
+            "why ",
+            "curious",
+            "would love to hear",
+            "thoughts?",
+            "any advice",
+            "looking for",
+            "seeking",
+            "can anyone",
+            "has anyone",
+            "what do you think",
+            "would you do",
+            "anyone else"
+        };
+
+        foreach (var marker in ctaMarkers)
+        {
+            if (source.Contains(marker) || draft.Contains(marker))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static double ComputeCtaParticipationPenalty(
+        SocialMoveCandidate candidate,
+        MessageContext context)
+    {
+        if (!LooksLikeCtaOrQuestion(context))
+            return 0.0;
+
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+
+        var weakPatterns = new[]
+        {
+            "great question",
+            "interesting question",
+            "curious to hear",
+            "following",
+            "great point",
+            "well said",
+            "thanks for sharing"
+        };
+
+        var penalty = 0.0;
+
+        foreach (var pattern in weakPatterns)
+        {
+            if (reply.Contains(pattern))
+                penalty += 0.20;
+        }
+
+        var hasAnswerShape =
+            reply.Contains("because") ||
+            reply.Contains("i think") ||
+            reply.Contains("in my experience") ||
+            reply.Contains("one way") ||
+            reply.Contains("the tradeoff") ||
+            reply.Contains("for example");
+
+        if (!hasAnswerShape)
+            penalty += 0.12;
+
+        return Math.Min(penalty, 0.45);
+    }
+
     private bool IsDisqualifiedAsGenericPraise(
         SocialMoveCandidate candidate,
         MessageContext context,
@@ -827,7 +905,8 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                    (0.08 * score.GenericPraisePenalty) -
                    score.GenericPenalty -
                    (0.12 * score.ParticipationWithoutPositionPenalty) -
-                   (0.08 * score.EngagementCost);
+                   (0.08 * score.EngagementCost) -
+                   score.CtaParticipationPenalty;
         }
 
         return (0.22 * score.Relevance) +
@@ -842,7 +921,8 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                (0.18 * score.HallucinationPenalty) -
                (0.12 * score.GenericPraisePenalty) -
                score.GenericPenalty -
-               (0.08 * score.EngagementCost);
+               (0.08 * score.EngagementCost) -
+               score.CtaParticipationPenalty;
     }
 
     private static double CalculateQuestionQuality(SocialMoveCandidate candidate, MessageContext context)

@@ -27,7 +27,7 @@ namespace Sovereign.Intelligence.Tests
         }
 
         [Fact]
-        public void Detect_ShouldReturnQuestion_ForQuestionText()
+        public void Detect_ShouldReturnCtaOrQuestion_ForQuestionText()
         {
             // Arrange
             var detector = new SocialSituationDetector();
@@ -41,7 +41,8 @@ namespace Sovereign.Intelligence.Tests
             var situation = detector.Detect(context);
 
             // Assert
-            Assert.Equal("question", situation.Type);
+            Assert.Equal("cta_or_question", situation.Type);
+            Assert.Contains("input", situation.Summary, System.StringComparison.OrdinalIgnoreCase);
         }
     }
 }

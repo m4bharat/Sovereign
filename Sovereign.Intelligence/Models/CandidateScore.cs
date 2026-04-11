@@ -20,6 +20,7 @@ public sealed class CandidateScore
     public double CTAResponseQuality { get; init; }
     public double PositioningStrength { get; init; }
     public double ParticipationWithoutPositionPenalty { get; init; }
+    public double CtaParticipationPenalty { get; init; }
 
     public double ComputedTotal { get; set; }
     public double Total => ComputedTotal;

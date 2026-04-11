@@ -35,9 +35,10 @@ public sealed class SocialMovePlanner : ISocialMovePlanner
             },
             "cta_or_question" => new[]
             {
-                new SocialMoveCandidate { Move = "answer_question", Rationale = "Respond directly to the question or CTA." },
-                new SocialMoveCandidate { Move = "add_specific_insight", Rationale = "Add a meaningful, context-specific point." },
-                new SocialMoveCandidate { Move = "light_touch_question", Rationale = "Acknowledge and engage without generic praise." }
+                new SocialMoveCandidate { Move = "answer_question", Rationale = "Directly answers the CTA/question." },
+                new SocialMoveCandidate { Move = "add_specific_insight", Rationale = "Adds a concrete, useful point." },
+                new SocialMoveCandidate { Move = "light_touch_question", Rationale = "Engages with a brief but relevant follow-up." },
+                new SocialMoveCandidate { Move = "no_reply", Rationale = "Skip only if confidence or relevance is weak." }
             },
             "question" => new[]
             {

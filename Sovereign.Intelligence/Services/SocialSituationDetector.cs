@@ -7,8 +7,52 @@ namespace Sovereign.Intelligence.Services;
 
 public sealed class SocialSituationDetector : ISocialSituationDetector
 {
+    private static readonly string[] CtaMarkers =
+    {
+        "how ",
+        "what ",
+        "why ",
+        "curious",
+        "would love to hear",
+        "thoughts?",
+        "any advice",
+        "looking for",
+        "seeking",
+        "can anyone",
+        "has anyone",
+        "what do you think",
+        "would you do",
+        "anyone else"
+    };
+
+    private static bool LooksLikeCtaOrQuestion(MessageContext context)
+    {
+        var source = (context.SourceText ?? string.Empty).Trim().ToLowerInvariant();
+        var draft = (context.Message ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (source.Contains("?") || draft.Contains("?"))
+            return true;
+
+        foreach (var marker in CtaMarkers)
+        {
+            if (source.Contains(marker) || draft.Contains(marker))
+                return true;
+        }
+
+        return false;
+    }
+
     public SocialSituation Detect(MessageContext context)
     {
+        if (LooksLikeCtaOrQuestion(context))
+        {
+            return new SocialSituation
+            {
+                Type = "cta_or_question",
+                Summary = "The source is asking for input, advice, or direct engagement."
+            };
+        }
+
         var source = context.SourceText ?? string.Empty;
 
         if (ContainsAny(source,
@@ -55,38 +99,6 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
                 Type = "opinion",
                 Confidence = 0.76,
                 Signals = new[] { "opinion", "stance", "asksForDiscussion" }
-            };
-        }
-
-        var draft = context.Message ?? string.Empty;
-        var looksLikeQuestion = source.Contains("?", StringComparison.Ordinal) ||
-            draft.Contains("?", StringComparison.Ordinal);
-
-        var ctaStarters = new[]
-        {
-            "how ",
-            "what ",
-            "why ",
-            "curious",
-            "would love to hear",
-            "thoughts?",
-            "any advice",
-            "looking for",
-            "seeking",
-            "can anyone",
-            "has anyone"
-        };
-
-        var sourceLower = source.ToLowerInvariant();
-        var isCta = ctaStarters.Any(x => sourceLower.Contains(x));
-
-        if (looksLikeQuestion || isCta)
-        {
-            return new SocialSituation
-            {
-                Type = "cta_or_question",
-                Confidence = 0.82,
-                Signals = new[] { "question", "call to action", "discussion prompt" }
             };
         }
 
