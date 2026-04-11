@@ -1,3 +1,4 @@
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 using System.Text.RegularExpressions;

@@ -14,6 +14,7 @@ public sealed class CandidateScore
     public double TimingFit { get; init; }
     public double InsightDepth { get; init; }
     public double GenericPraisePenalty { get; init; }
+    public double GenericPenalty { get; init; }
     public double EngagementCost { get; init; }
     public double QuestionQuality { get; init; }
     public double CTAResponseQuality { get; init; }

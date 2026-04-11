@@ -1,4 +1,4 @@
-namespace Sovereign.Application.DTOs;
+namespace Sovereign.Domain.DTOs;
 
 public sealed class AssembleAiContextRequest
 {
@@ -19,5 +19,6 @@ public sealed class AssembleAiContextRequest
     public string ParentContextText { get; init; } = string.Empty;
     public string NearbyContextText { get; init; } = string.Empty;
 
-    public Dictionary<string, string> InteractionMetadata { get; init; } = new();
+    public IReadOnlyDictionary<string, string> InteractionMetadata { get; init; }
+        = new Dictionary<string, string>();
 }

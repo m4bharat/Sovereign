@@ -1,5 +1,7 @@
 using System.Text;
-using Sovereign.Application.DTOs;
+using Sovereign.Domain.DTOs;
+using Sovereign.Domain.Services;
+using Sovereign.Domain.Models;
 using Sovereign.Application.Interfaces;
 using Sovereign.Intelligence.Models;
 

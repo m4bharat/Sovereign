@@ -1,9 +1,9 @@
 using System.Threading;
 using System.Threading.Tasks;
-using Sovereign.Application.DTOs;
-using Sovereign.Intelligence.Models;
+using Sovereign.Domain.DTOs;
+using Sovereign.Domain.Models;
 
-namespace Sovereign.Application.Services;
+namespace Sovereign.Domain.Services;
 
 public interface IConversationContextAssembler
 {

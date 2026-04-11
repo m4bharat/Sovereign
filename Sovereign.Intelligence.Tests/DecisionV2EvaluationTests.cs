@@ -5,6 +5,9 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Moq;
 using Xunit;
+using Sovereign.Domain.DTOs;
+using Sovereign.Domain.Services;
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.DecisionV2;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
@@ -52,10 +55,22 @@ namespace Sovereign.Intelligence.Tests
             mockWinnerSelector.Setup(w => w.SelectBest(It.IsAny<IReadOnlyList<CandidateScore>>(), It.IsAny<MessageContext>()))
                 .Returns(new WinnerSelectionResult { Winner = moves[0], Alternatives = new List<SocialMoveCandidate>() });
 
+            var mockAssembler = new Mock<IConversationContextAssembler>();
+            mockAssembler.Setup(a => a.AssembleAsync(It.IsAny<AssembleAiContextRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new MessageContext
+                {
+                    UserId = "user1",
+                    ContactId = "contact1",
+                    Message = "test",
+                    InteractionMode = "compose",
+                    Platform = "LinkedIn"
+                });
+
             var mockLlmClient = new Mock<ILlmClient>();
             var mockLogger = new Mock<ILogger<DecisionEngineV2>>();
 
             var engine = new DecisionEngineV2(
+                mockAssembler.Object,
                 mockRelationshipEngine.Object,
                 mockSituationDetector.Object,
                 mockMovePlanner.Object,
@@ -111,6 +126,17 @@ namespace Sovereign.Intelligence.Tests
             mockWinnerSelector.Setup(w => w.SelectBest(It.IsAny<IReadOnlyList<CandidateScore>>(), It.IsAny<MessageContext>()))
                 .Returns(new WinnerSelectionResult { Winner = moves[0], Alternatives = new List<SocialMoveCandidate>() });
 
+            var mockAssembler = new Mock<IConversationContextAssembler>();
+            mockAssembler.Setup(a => a.AssembleAsync(It.IsAny<AssembleAiContextRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new MessageContext
+                {
+                    UserId = "user1",
+                    ContactId = "contact1",
+                    Message = "test",
+                    InteractionMode = "compose",
+                    Platform = "LinkedIn"
+                });
+
             var mockLlmClient = new Mock<ILlmClient>();
             mockLlmClient.Setup(c => c.CompleteDecisionV2Async(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
                 .ReturnsAsync(new DecisionV2Result { Reply = "polished reply", Confidence = 0.9, Rationale = "polished", Alternatives = new List<string>() });
@@ -118,6 +144,7 @@ namespace Sovereign.Intelligence.Tests
             var mockLogger = new Mock<ILogger<DecisionEngineV2>>();
 
             var engine = new DecisionEngineV2(
+                mockAssembler.Object,
                 mockRelationshipEngine.Object,
                 mockSituationDetector.Object,
                 mockMovePlanner.Object,

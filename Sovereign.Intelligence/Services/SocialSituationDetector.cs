@@ -1,3 +1,5 @@
+using System.Linq;
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 
@@ -56,14 +58,35 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
             };
         }
 
-        if (source.Contains("?", StringComparison.Ordinal) ||
-            ContainsAny(source, "what do you think", "curious", "how do you", "would you"))
+        var draft = context.Message ?? string.Empty;
+        var looksLikeQuestion = source.Contains("?", StringComparison.Ordinal) ||
+            draft.Contains("?", StringComparison.Ordinal);
+
+        var ctaStarters = new[]
+        {
+            "how ",
+            "what ",
+            "why ",
+            "curious",
+            "would love to hear",
+            "thoughts?",
+            "any advice",
+            "looking for",
+            "seeking",
+            "can anyone",
+            "has anyone"
+        };
+
+        var sourceLower = source.ToLowerInvariant();
+        var isCta = ctaStarters.Any(x => sourceLower.Contains(x));
+
+        if (looksLikeQuestion || isCta)
         {
             return new SocialSituation
             {
-                Type = "question",
-                Confidence = 0.78,
-                Signals = new[] { "question", "discussion prompt" }
+                Type = "cta_or_question",
+                Confidence = 0.82,
+                Signals = new[] { "question", "call to action", "discussion prompt" }
             };
         }
 

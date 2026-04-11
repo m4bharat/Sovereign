@@ -1,7 +1,8 @@
-namespace Sovereign.Intelligence.Interfaces;
-
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Models;
 using Sovereign.Intelligence.Services;
+
+namespace Sovereign.Intelligence.Interfaces;
 
 public interface IWinnerSelectionEngine
 {

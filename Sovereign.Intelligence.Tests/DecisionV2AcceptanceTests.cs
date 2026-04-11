@@ -3,6 +3,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
+using Sovereign.Domain.DTOs;
+using Sovereign.Domain.Services;
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.DecisionV2;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
@@ -27,6 +30,25 @@ public class DecisionV2AcceptanceTests
                 RiskScore = scenario.InputPayload.PowerDifferential
             });
 
+        var mockAssembler = new Mock<IConversationContextAssembler>();
+        mockAssembler.Setup(a => a.AssembleAsync(It.IsAny<AssembleAiContextRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AssembleAiContextRequest request, CancellationToken ct) => new MessageContext
+            {
+                UserId = request.UserId,
+                ContactId = request.ContactId,
+                Message = request.Message,
+                Platform = request.Platform,
+                Surface = request.Surface,
+                CurrentUrl = request.CurrentUrl,
+                SourceAuthor = request.SourceAuthor,
+                SourceTitle = request.SourceTitle,
+                SourceText = request.SourceText,
+                ParentContextText = request.ParentContextText,
+                NearbyContextText = request.NearbyContextText,
+                InteractionMode = !string.IsNullOrWhiteSpace(request.SourceText) ? "reply" :
+                    !string.IsNullOrWhiteSpace(request.ParentContextText) ? "chat" : "compose"
+            });
+
         var realSituationDetector = new SocialSituationDetector();
         var realMovePlanner = new SocialMovePlanner();
         var realReplyGenerator = new CandidateReplyGenerator();
@@ -36,6 +58,7 @@ public class DecisionV2AcceptanceTests
         var mockLogger = new Mock<ILogger<DecisionEngineV2>>();
 
         var engine = new DecisionEngineV2(
+            mockAssembler.Object,
             mockRelationshipEngine.Object,
             realSituationDetector,
             realMovePlanner,

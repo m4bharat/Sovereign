@@ -1,4 +1,6 @@
-﻿using System.Text;
+using System.Linq;
+using System.Text;
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.DecisionV2;
 using Sovereign.Intelligence.Models;
 
@@ -24,40 +26,67 @@ public sealed class DecisionV2PromptBuilder
         sb.AppendLine("}");
         sb.AppendLine();
 
-        sb.AppendLine("Global rules:");
-        sb.AppendLine("- Improve the reply without changing its intent.");
-        sb.AppendLine("- Keep the reply concise, natural, polished, and socially intelligent.");
-        sb.AppendLine("- Do not sound robotic, preachy, or generic.");
-        sb.AppendLine("- Do not hallucinate facts.");
-        sb.AppendLine("- Use SourceText and ParentContextText as primary context when present.");
-        sb.AppendLine("- For questions on high-signal posts (educational, opinion, recruitment, milestone, opportunity):");
-        sb.AppendLine("  - Never emit bare questions. Always include framing statements first.");
-        sb.AppendLine("  - Use specific angles: constraint, trade-off, pattern, transition, selection.");
-        sb.AppendLine("  - Ban generic stems like 'What do you think?', 'Can you share more?', 'What's the biggest challenge?'.");
-        sb.AppendLine("  - Examples: 'Programs like this close the learning-to-production gap well. I'm curious—what tends to be the hardest part when graduates first enter real client work?'");
+        sb.AppendLine("Rules:");
+        sb.AppendLine("- Keep the user's intent, but improve the move.");
+        sb.AppendLine("- Keep the reply concise, human, specific, and socially intelligent.");
+        sb.AppendLine("- Never sound robotic, preachy, or generic.");
+        sb.AppendLine("- Never hallucinate facts.");
+        sb.AppendLine("- Ban filler such as: 'Great point', 'So important', 'Thanks for sharing', 'Well said' unless grounded in specific context.");
+        sb.AppendLine("- Respect interaction mode:");
+        sb.AppendLine("  - chat: respond like a natural direct message.");
+        sb.AppendLine("  - reply: respond to the source post/comment directly.");
+        sb.AppendLine("  - compose: produce a clean standalone draft.");
+        sb.AppendLine("- If move is no_reply, return an empty reply.");
         sb.AppendLine();
 
+        AppendLineIfPresent(sb, "InteractionMode", context.InteractionMode);
         AppendLineIfPresent(sb, "SituationType", context.SituationType);
+        AppendLineIfPresent(sb, "DesiredTone", context.DesiredTone);
         AppendLineIfPresent(sb, "ChosenMove", winner.Move);
         AppendLineIfPresent(sb, "Rationale", winner.Rationale);
-        AppendLineIfPresent(sb, "DesiredTone", context.DesiredTone);
-        AppendLineIfPresent(sb, "SourceText", context.SourceText);
         AppendLineIfPresent(sb, "Author", context.SourceAuthor);
+        AppendLineIfPresent(sb, "Title", context.SourceTitle);
+
+        AppendBlockIfPresent(sb, "UserDraft", context.Message);
+        AppendBlockIfPresent(sb, "SourceText", context.SourceText);
+        AppendBlockIfPresent(sb, "ParentContextText", context.ParentContextText);
+        AppendBlockIfPresent(sb, "NearbyContextText", context.NearbyContextText);
+
+        if (context.RecentMessages?.Any() == true && context.InteractionMode == "chat")
+        {
+            sb.AppendLine("RecentMessages:");
+            foreach (var line in context.RecentMessages.TakeLast(6))
+            {
+                sb.AppendLine($"- {line}");
+            }
+            sb.AppendLine();
+        }
+
+        if (context.MemoryFacts?.Any() == true && context.InteractionMode != "reply")
+        {
+            sb.AppendLine("RelevantMemoryFacts:");
+            foreach (var fact in context.MemoryFacts.Take(5))
+            {
+                sb.AppendLine($"- {fact}");
+            }
+            sb.AppendLine();
+        }
+
         AppendBlockIfPresent(sb, "CandidateReply", winner.Reply);
 
-        if (winner.Alternatives != null && winner.Alternatives.Any())
+        if (winner.Alternatives?.Any() == true)
         {
             sb.AppendLine("Alternatives:");
-            foreach (var alternative in winner.Alternatives)
+            foreach (var alt in winner.Alternatives.Take(3))
             {
-                sb.AppendLine($"  {{\"reply\":\"{alternative}\"}}");
+                sb.AppendLine($"- {alt}");
             }
         }
 
         return sb.ToString();
     }
 
-    private static void AppendLineIfPresent(StringBuilder sb, string label, string value)
+    private static void AppendLineIfPresent(StringBuilder sb, string label, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))
         {
@@ -65,12 +94,13 @@ public sealed class DecisionV2PromptBuilder
         }
     }
 
-    private static void AppendBlockIfPresent(StringBuilder sb, string label, string value)
+    private static void AppendBlockIfPresent(StringBuilder sb, string label, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))
         {
             sb.AppendLine($"{label}:");
             sb.AppendLine(value.Trim());
+            sb.AppendLine();
         }
     }
 }

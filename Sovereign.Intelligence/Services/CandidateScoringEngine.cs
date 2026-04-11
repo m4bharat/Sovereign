@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 
@@ -94,12 +95,14 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 TimingFit = ScoreTimingFit(relationshipAnalysis, candidate.Move),
                 InsightDepth = CalculateInsightDepth(candidate, context),
                 GenericPraisePenalty = CalculateGenericPraisePenalty(candidate, context),
+                GenericPenalty = ComputeGenericPenalty(candidate.Reply),
                 EngagementCost = CalculateEngagementCost(candidate, relationshipAnalysis),
                 QuestionQuality = CalculateQuestionQuality(candidate, context),
                 CTAResponseQuality = CalculateCTAResponseQuality(candidate, context),
                 PositioningStrength = CalculatePositioningStrength(candidate, context),
                 ParticipationWithoutPositionPenalty = CalculateParticipationWithoutPositionPenalty(candidate, context)
             };
+            candidate.GenericPenalty = score.GenericPenalty;
 
             score.ComputedTotal = ComputeTotal(score, context);
 
@@ -405,6 +408,44 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return Clamp01(penalty);
     }
 
+    private static double ComputeGenericPenalty(string reply)
+    {
+        if (string.IsNullOrWhiteSpace(reply))
+            return 0;
+
+        var text = reply.Trim().ToLowerInvariant();
+
+        var bannedPatterns = new[]
+        {
+            "great point",
+            "great post",
+            "well said",
+            "so important",
+            "thanks for sharing",
+            "completely agree",
+            "love this",
+            "very insightful",
+            "this is so true"
+        };
+
+        var penalty = 0.0;
+
+        foreach (var pattern in bannedPatterns)
+        {
+            if (text.Contains(pattern))
+            {
+                penalty += 0.18;
+            }
+        }
+
+        if (text.Length < 12)
+        {
+            penalty += 0.10;
+        }
+
+        return Math.Min(penalty, 0.45);
+    }
+
     /// <summary>
     /// Scores engagement cost penalty. Higher values indicate long, verbose replies on weak relationships.
     /// </summary>
@@ -698,6 +739,7 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                    (0.04 * score.TimingFit) -
                    (0.14 * score.HallucinationPenalty) -
                    (0.08 * score.GenericPraisePenalty) -
+                   score.GenericPenalty -
                    (0.12 * score.ParticipationWithoutPositionPenalty) -
                    (0.08 * score.EngagementCost);
         }
@@ -713,6 +755,7 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                (0.06 * score.TimingFit) -
                (0.18 * score.HallucinationPenalty) -
                (0.12 * score.GenericPraisePenalty) -
+               score.GenericPenalty -
                (0.08 * score.EngagementCost);
     }
 

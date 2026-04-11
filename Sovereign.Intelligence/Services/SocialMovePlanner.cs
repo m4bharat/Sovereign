@@ -33,6 +33,12 @@ public sealed class SocialMovePlanner : ISocialMovePlanner
                 new SocialMoveCandidate { Move = "add_nuance", Rationale = "Agree and add a useful layer." },
                 new SocialMoveCandidate { Move = "ask_relevant_question", Rationale = "Open thoughtful discussion." }
             },
+            "cta_or_question" => new[]
+            {
+                new SocialMoveCandidate { Move = "answer_question", Rationale = "Respond directly to the question or CTA." },
+                new SocialMoveCandidate { Move = "add_specific_insight", Rationale = "Add a meaningful, context-specific point." },
+                new SocialMoveCandidate { Move = "light_touch_question", Rationale = "Acknowledge and engage without generic praise." }
+            },
             "question" => new[]
             {
                 new SocialMoveCandidate { Move = "answer_supportively", Rationale = "Respond to the question directly." },

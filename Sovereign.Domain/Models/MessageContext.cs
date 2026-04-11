@@ -1,4 +1,4 @@
-namespace Sovereign.Intelligence.Models;
+namespace Sovereign.Domain.Models;
 
 public sealed class MessageContext
 {

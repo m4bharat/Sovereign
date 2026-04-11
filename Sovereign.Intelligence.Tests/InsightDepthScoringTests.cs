@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Xunit;
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Models;
 using Sovereign.Intelligence.Services;
 

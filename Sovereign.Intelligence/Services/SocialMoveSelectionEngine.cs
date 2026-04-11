@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Models;
 
 namespace Sovereign.Intelligence.Services;

@@ -1,5 +1,6 @@
 using System.Linq;
 using Xunit;
+using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
 

@@ -12,4 +12,7 @@ public sealed class SocialMoveCandidate
     public string RelationshipEffect { get; init; } = string.Empty;
     public double RiskScore { get; init; } = 0.0;
     public double OpportunityScore { get; init; } = 0.0;
+    public double GenericPenalty { get; set; } = 0.0;
+    public string SituationType { get; init; } = string.Empty;
+    public string Tone { get; init; } = string.Empty;
 }
