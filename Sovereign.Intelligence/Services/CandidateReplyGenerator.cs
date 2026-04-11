@@ -19,6 +19,31 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
             .Select(move =>
             {
                 var reply = GenerateReplyForMove(move.Move, context, normalizedMessage, sourceText);
+                // ===== GENERATION QUALITY FILTER =====
+                if (!string.Equals(move.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
+                {
+                    var trimmed = (reply ?? string.Empty).Trim();
+
+                    // kill empty or near-empty replies early
+                    if (trimmed.Length < 6)
+                    {
+                        reply = string.Empty;
+                    }
+
+                    // prevent generic-only responses
+                    var lower = trimmed.ToLowerInvariant();
+
+                    var genericOnly =
+                        lower.StartsWith("great") ||
+                        lower.StartsWith("nice") ||
+                        lower.StartsWith("well said") ||
+                        lower.StartsWith("interesting");
+
+                    if (genericOnly && trimmed.Length < 35)
+                    {
+                        reply = string.Empty;
+                    }
+                }
                 var shortReply = BuildShortReplyForMove(move.Move, context, normalizedMessage, sourceText);
 
                 return new SocialMoveCandidate
@@ -219,6 +244,12 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
             return string.Empty;
 
         var cleanDraft = RewriteStandaloneSentence(draft);
+        // Ensure weak drafts become meaningful
+        if (cleanDraft.Length < 25)
+        {
+            cleanDraft = $"{cleanDraft} — this highlights a broader shift in how these systems are actually being deployed and scaled.";
+        }
+
         var topic = ExtractTopic(sourceText);
 
         if (isCompose)
@@ -267,7 +298,7 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
             return $"What stands out here is that {topic} is no longer just about the technology itself — the real edge comes from how fast it can be deployed and operationalized.";
         }
 
-        return "What stands out here is not just the technology itself, but how quickly it’s being deployed at scale — that’s where the real competitive advantage starts to emerge.";
+        return "What stands out here is not just the technology itself, but how quickly it is being deployed at scale — that is where the real competitive advantage begins to emerge in practice.";
     }
 
     private static string GenerateLightReply(string sourceText, string userDraft)
@@ -322,7 +353,7 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
 
         var normalized = RewriteStandaloneSentence(topic);
 
-        return $"{normalized}\n\nWe’re entering a phase where execution speed matters more than ideas alone. The real gap is no longer between those who understand the technology and those who don’t — it’s between those who can operationalize it at scale and those who can’t.\n\nThe next wave of advantage will come from deployment discipline, not just technical excitement.";
+        return $"{normalized}\n\nWe are entering a phase where execution speed matters more than ideas alone. The real gap is no longer between those who understand the technology and those who do not — it is between those who can operationalize it at scale and those who cannot.\n\nThe next wave of advantage will come from deployment discipline, not just technical capability.";
     }
 
     private static string GeneratePostOutline(string topic)

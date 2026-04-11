@@ -152,38 +152,31 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             score.RewriteFeedReplyBoost = rewriteFeedReplyBoost;
             score.ComputedTotal += rewriteFeedReplyBoost;
 
-            if (IsDisqualifiedAsGenericPraise(candidate, context, score) ||
-                IsDisqualifiedForCtaPost(candidate, context, score) ||
-                (IsCtaEngagementPost(context) && !MeetsCtaThresholds(score)))
-            {
-                score.ComputedTotal = 0.0;
-            }
-            // ===== FINAL GUARDRAIL =====
-
-            var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+            // ===== FINAL POLISH GUARDRAIL =====
+            var replyText = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
             var hasDraftFinal = !string.IsNullOrWhiteSpace(context.Message);
             var isFeedReplyFinal = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
             var isComposeFinal = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
 
             // 1. Kill ultra-short garbage
-            if (reply.Length < 8 && candidate.Move != "no_reply")
+            if (replyText.Length < 8 && !string.Equals(candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
             {
                 score.ComputedTotal = 0.0;
             }
 
             // 2. Kill generic-only replies
             var genericOnly =
-                reply.StartsWith("great") ||
-                reply.StartsWith("nice") ||
-                reply.StartsWith("well said") ||
-                reply.StartsWith("interesting");
+                replyText.StartsWith("great") ||
+                replyText.StartsWith("nice") ||
+                replyText.StartsWith("well said") ||
+                replyText.StartsWith("interesting");
 
-            if (genericOnly && reply.Length < 40)
+            if (genericOnly && replyText.Length < 40)
             {
                 score.ComputedTotal = 0.0;
             }
 
-            // 3. Enforce minimum intelligence for feed replies
+            // 3. Enforce minimum intelligence for drafted feed replies
             if (isFeedReplyFinal && hasDraftFinal && !string.IsNullOrWhiteSpace(context.SourceText))
             {
                 var hasSignal =
@@ -191,23 +184,32 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                     score.Specificity >= 0.20 ||
                     score.PositioningStrength >= 0.15;
 
-                if (!hasSignal && candidate.Move != "rewrite_user_intent")
+                if (!hasSignal && !string.Equals(candidate.Move, "rewrite_user_intent", StringComparison.OrdinalIgnoreCase))
                 {
                     score.ComputedTotal *= 0.4;
                 }
             }
 
-            // 4. Compose must not be empty-quality
+            // 4. Compose must not be low-quality
             if (isComposeFinal && hasDraftFinal)
             {
-                if (candidate.Move == "draft_post" || candidate.Move == "rewrite_user_intent")
+                if (string.Equals(candidate.Move, "draft_post", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(candidate.Move, "rewrite_user_intent", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (reply.Length < 40)
+                    if (replyText.Length < 40)
                     {
                         score.ComputedTotal *= 0.5;
                     }
                 }
             }
+
+            if (IsDisqualifiedAsGenericPraise(candidate, context, score) ||
+                IsDisqualifiedForCtaPost(candidate, context, score) ||
+                (IsCtaEngagementPost(context) && !MeetsCtaThresholds(score)))
+            {
+                score.ComputedTotal = 0.0;
+            }
+          
             return score;
         }).ToArray();
     }
