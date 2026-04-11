@@ -487,7 +487,7 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         if (reply.StartsWith("great post") || reply.Contains("thanks for sharing") || reply.Contains("check out"))
             return 0.40;
 
-        if (reply.Length > 20 && reply.Length < 140 && Regex.IsMatch(reply, "\b(great|nice|amazing|congrats|well done)\b"))
+        if (reply.Length > 20 && reply.Length < 140 && Regex.IsMatch(reply, @"\b(great|nice|amazing|congrats|well done)\b"))
             return 0.25;
 
         return 0.0;
@@ -497,16 +497,28 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         SocialMoveCandidate candidate,
         MessageContext context)
     {
+
         if (!((context.InteractionMode ?? string.Empty).Equals("chat", StringComparison.OrdinalIgnoreCase)))
             return 0.0;
 
         var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
 
-        if (Regex.IsMatch(reply, "\b(i'm|i am|i'll|i'd|i've)\b") || reply.Contains("let me know") || reply.Contains("happy to"))
+        if (Regex.IsMatch(reply, @"\b(i'm|i am|i'll|i'd|i've)\b") || reply.Contains("let me know") || reply.Contains("happy to"))
             return 0.20;
 
-        if (reply.Length > 0 && reply.Length <= 200 && !Regex.IsMatch(reply, "\b(as per|in conclusion|furthermore)\b"))
+        if (reply.Length > 0 && reply.Length <= 200 && !Regex.IsMatch(reply, @"\b(as per|in conclusion|furthermore)\b"))
             return 0.05;
+
+        if (Regex.IsMatch(reply, @"\b(i'm|i am|i'll|i'd|i've)\b") ||
+                reply.Contains("let me know") ||
+                reply.Contains("happy to") ||
+                reply.Contains("appreciate it") ||
+                reply.Contains("thanks so much") ||
+                reply.Contains("sounds good") ||
+                reply.Contains("sure"))
+                    {
+                        return 0.20;
+                    }
 
         return 0.0;
     }

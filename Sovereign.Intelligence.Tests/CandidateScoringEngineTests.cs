@@ -382,4 +382,32 @@ public class CandidateScoringEngineTests
         Assert.True(natural.Total > commentStyle.Total, "Natural DM-style reply should score higher than comment-style broadcast in chat.");
         Assert.True(commentStyle.ChatStyleMismatchPenalty > 0.0, "Comment-style reply should receive a chat-style mismatch penalty.");
     }
+
+    [Fact]
+    public void Score_ShouldDetect_WordBoundaryBasedChatPraise()
+    {
+        var candidates = new List<SocialMoveCandidate>
+    {
+        new() { Move = "respond_helpfully", Reply = "Nice work", RequiresPolish = false },
+        new() { Move = "respond_helpfully", Reply = "Thanks so much — really appreciate it.", RequiresPolish = false }
+    };
+
+        var context = new MessageContext
+        {
+            InteractionMode = "chat",
+            Message = "Wish him thank you"
+        };
+
+        var scores = _engine.Score(
+            candidates,
+            new SocialSituation { Type = "direct_message" },
+            context,
+            new RelationshipAnalysis());
+
+        var praise = scores.First(s => s.Candidate.Reply == "Nice work");
+        var dm = scores.First(s => s.Candidate.Reply.Contains("really appreciate it"));
+
+        Assert.True(praise.ChatStyleMismatchPenalty > 0.0);
+        Assert.True(dm.Total > praise.Total);
+    }
 }
