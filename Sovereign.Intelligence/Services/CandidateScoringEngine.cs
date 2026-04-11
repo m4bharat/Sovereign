@@ -158,33 +158,56 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             {
                 score.ComputedTotal = 0.0;
             }
-            // HARD BLOCK no_reply on drafted feed replies / compose
-            if (string.Equals(candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
-            {
-                var hasDraft = !string.IsNullOrWhiteSpace(context.Message);
-                var isFeedReply = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
-                var isCompose = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
-                var hasSource = !string.IsNullOrWhiteSpace(context.SourceText);
+            // ===== FINAL GUARDRAIL =====
 
-                if ((isFeedReply && hasDraft && hasSource) ||
-                    (isCompose && hasDraft))
+            var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+            var hasDraftFinal = !string.IsNullOrWhiteSpace(context.Message);
+            var isFeedReplyFinal = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
+            var isComposeFinal = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
+
+            // 1. Kill ultra-short garbage
+            if (reply.Length < 8 && candidate.Move != "no_reply")
+            {
+                score.ComputedTotal = 0.0;
+            }
+
+            // 2. Kill generic-only replies
+            var genericOnly =
+                reply.StartsWith("great") ||
+                reply.StartsWith("nice") ||
+                reply.StartsWith("well said") ||
+                reply.StartsWith("interesting");
+
+            if (genericOnly && reply.Length < 40)
+            {
+                score.ComputedTotal = 0.0;
+            }
+
+            // 3. Enforce minimum intelligence for feed replies
+            if (isFeedReplyFinal && hasDraftFinal && !string.IsNullOrWhiteSpace(context.SourceText))
+            {
+                var hasSignal =
+                    score.InsightDepth >= 0.15 ||
+                    score.Specificity >= 0.20 ||
+                    score.PositioningStrength >= 0.15;
+
+                if (!hasSignal && candidate.Move != "rewrite_user_intent")
                 {
-                    score.ComputedTotal = Math.Min(score.ComputedTotal, 0.05);
+                    score.ComputedTotal *= 0.4;
                 }
             }
 
-            // Force rewrite/draft candidates to stay competitive when a user already typed something
-            var isRewriteMove =
-                string.Equals(candidate.Move, "rewrite_user_intent", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(candidate.Move, "draft_post", StringComparison.OrdinalIgnoreCase);
-
-            var hasDraft2 = !string.IsNullOrWhiteSpace(context.Message);
-
-            if (isRewriteMove && hasDraft2)
+            // 4. Compose must not be empty-quality
+            if (isComposeFinal && hasDraftFinal)
             {
-                score.ComputedTotal = Math.Max(score.ComputedTotal, 0.65);
+                if (candidate.Move == "draft_post" || candidate.Move == "rewrite_user_intent")
+                {
+                    if (reply.Length < 40)
+                    {
+                        score.ComputedTotal *= 0.5;
+                    }
+                }
             }
-
             return score;
         }).ToArray();
     }
