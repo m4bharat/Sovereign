@@ -7,6 +7,16 @@ public sealed class SocialMovePlanner : ISocialMovePlanner
 {
     public IReadOnlyList<SocialMoveCandidate> Plan(SocialSituation situation, RelationshipAnalysis relationshipAnalysis)
     {
+        if (string.Equals(situation.Type, "rewrite_direct_message", StringComparison.OrdinalIgnoreCase))
+        {
+            return new List<SocialMoveCandidate>
+            {
+                new SocialMoveCandidate { Move = "rewrite_user_intent", Rationale = "Rewrite rough user intent into a natural direct message." },
+                new SocialMoveCandidate { Move = "respond_helpfully", Rationale = "Produce a concise, helpful DM if the intent is already mostly clear." },
+                new SocialMoveCandidate { Move = "acknowledge_and_continue", Rationale = "Use when the best reply is short and conversational." },
+                new SocialMoveCandidate { Move = "no_reply", Rationale = "Skip only if the user input is too incomplete to rewrite safely." }
+            };
+        }
         var moves = situation.Type switch
         {
             "milestone" => new[]

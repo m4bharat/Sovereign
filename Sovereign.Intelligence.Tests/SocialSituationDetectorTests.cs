@@ -44,5 +44,24 @@ namespace Sovereign.Intelligence.Tests
             Assert.Equal("cta_or_question", situation.Type);
             Assert.Contains("input", situation.Summary, System.StringComparison.OrdinalIgnoreCase);
         }
+
+        [Fact]
+        public void Detect_ShouldReturn_RewriteDirectMessage_ForRoughChatIntent()
+        {
+            var detector = new SocialSituationDetector();
+            var context = new MessageContext
+            {
+                InteractionMode = "chat",
+                Message = "wish him thank you",
+                InteractionMetadata = new System.Collections.Generic.Dictionary<string, string>
+                {
+                    ["rewrite_intent"] = "True"
+                }
+            };
+
+            var situation = detector.Detect(context);
+
+            Assert.Equal("rewrite_direct_message", situation.Type);
+        }
     }
 }

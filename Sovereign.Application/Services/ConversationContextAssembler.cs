@@ -34,6 +34,7 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
         CancellationToken ct = default)
     {
         var interactionMode = ResolveInteractionMode(request);
+        var normalizedMessage = NormalizeUserMessage(request.Message);
 
         var thread = await _threadRepository.GetByUserAndContactAsync(
             request.UserId,
@@ -56,7 +57,7 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
             {
                 UserId = request.UserId,
                 ContactId = request.ContactId,
-                Message = NormalizeUserMessage(request.Message),
+            Message = normalizedMessage,
                 RelationshipRole = request.RelationshipRole,
                 RecentSummary = string.Empty,
                 LastTopicSummary = string.Empty,
@@ -72,7 +73,7 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
                 ParentContextText = request.ParentContextText,
                 NearbyContextText = TrimForReplyMode(request.NearbyContextText, interactionMode),
                 InteractionMode = interactionMode,
-                InteractionMetadata = new Dictionary<string, string>(request.InteractionMetadata)
+                InteractionMetadata = BuildInteractionMetadata(request.InteractionMetadata, normalizedMessage, interactionMode)
             };
         }
 
@@ -90,7 +91,7 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
         {
             UserId = request.UserId,
             ContactId = request.ContactId,
-            Message = NormalizeUserMessage(request.Message),
+            Message = normalizedMessage,
             RelationshipRole = request.RelationshipRole,
 
             // For reply mode, reduce thread/history dominance.
@@ -123,8 +124,58 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
             ParentContextText = interactionMode == "chat" ? request.ParentContextText : string.Empty,
             NearbyContextText = TrimForReplyMode(request.NearbyContextText, interactionMode),
             InteractionMode = interactionMode,
-            InteractionMetadata = new Dictionary<string, string>(request.InteractionMetadata)
+            InteractionMetadata = BuildInteractionMetadata(request.InteractionMetadata, normalizedMessage, interactionMode)
         };
+    }
+
+    private static Dictionary<string, string> BuildInteractionMetadata(
+        IReadOnlyDictionary<string, string>? input,
+        string normalizedMessage,
+        string interactionMode)
+    {
+        var interactionMetadata = input != null
+            ? new Dictionary<string, string>(input, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        interactionMetadata["rewrite_intent"] = LooksLikeRoughRewriteIntent(normalizedMessage, interactionMode).ToString();
+        return interactionMetadata;
+    }
+
+    private static bool LooksLikeRoughRewriteIntent(string? message, string? interactionMode)
+    {
+        if (!string.Equals(interactionMode, "chat", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var text = (message ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        // Short imperative/fragments are usually rewrite requests, not final phrasing.
+        if (text.Length <= 40 && !text.Contains("?"))
+        {
+            var starters = new[]
+            {
+                "wish",
+                "tell",
+                "ask",
+                "say",
+                "thank",
+                "reply",
+                "send",
+                "write",
+                "wish him",
+                "wish her",
+                "tell him",
+                "tell her",
+                "ask him",
+                "ask her"
+            };
+
+            if (starters.Any(s => text.StartsWith(s)))
+                return true;
+        }
+
+        return false;
     }
 
     private static string ResolveInteractionMode(AssembleAiContextRequest request)

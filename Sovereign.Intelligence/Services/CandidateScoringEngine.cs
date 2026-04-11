@@ -134,6 +134,10 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             var specificityBoost = ComputeSpecificityBoost(candidate.Reply, context);
             score.ComputedTotal += specificityBoost;
 
+            var rewriteIntentBoost = ComputeRewriteIntentBoost(candidate, context, situation);
+            score.RewriteIntentBoost = rewriteIntentBoost;
+            score.ComputedTotal += rewriteIntentBoost;
+
             if (IsDisqualifiedAsGenericPraise(candidate, context, score) ||
                 IsDisqualifiedForCtaPost(candidate, context, score) ||
                 (IsCtaEngagementPost(context) && !MeetsCtaThresholds(score)))
@@ -519,6 +523,23 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                     {
                         return 0.20;
                     }
+
+        return 0.0;
+    }
+
+    private static double ComputeRewriteIntentBoost(
+        SocialMoveCandidate candidate,
+        MessageContext context,
+        SocialSituation situation)
+    {
+        if (!string.Equals(situation.Type, "rewrite_direct_message", StringComparison.OrdinalIgnoreCase))
+            return 0.0;
+
+        if (string.Equals(candidate.Move, "rewrite_user_intent", StringComparison.OrdinalIgnoreCase))
+            return 0.20;
+
+        if (string.Equals(candidate.Move, "respond_helpfully", StringComparison.OrdinalIgnoreCase))
+            return 0.08;
 
         return 0.0;
     }

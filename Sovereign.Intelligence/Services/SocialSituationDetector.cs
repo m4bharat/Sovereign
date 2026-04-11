@@ -44,6 +44,19 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
 
     public SocialSituation Detect(MessageContext context)
     {
+        if (string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) &&
+            context.InteractionMetadata != null &&
+            context.InteractionMetadata.TryGetValue("rewrite_intent", out var rewriteIntent) &&
+            bool.TryParse(rewriteIntent, out var isRewriteIntent) &&
+            isRewriteIntent)
+        {
+            return new SocialSituation
+            {
+                Type = "rewrite_direct_message",
+                Summary = "The user gave a rough chat intent that should be rewritten into a natural DM."
+            };
+        }
+
         if ((context.InteractionMode ?? string.Empty).Equals("chat", StringComparison.OrdinalIgnoreCase))
         {
             return new SocialSituation

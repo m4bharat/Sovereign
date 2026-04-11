@@ -384,6 +384,38 @@ public class CandidateScoringEngineTests
     }
 
     [Fact]
+    public void Score_ShouldPrefer_RewriteUserIntent_ForRewriteDirectMessage()
+    {
+        var context = new MessageContext
+        {
+            InteractionMode = "chat",
+            Message = "wish him thank you",
+            InteractionMetadata = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["rewrite_intent"] = "True"
+            }
+        };
+
+        var situation = new SocialSituation { Type = "rewrite_direct_message" };
+
+        var rewrite = new SocialMoveCandidate
+        {
+            Move = "rewrite_user_intent",
+            Reply = "Thanks so much — really appreciate it."
+        };
+
+        var generic = new SocialMoveCandidate
+        {
+            Move = "respond_helpfully",
+            Reply = "Great point. Thanks for sharing."
+        };
+
+        var scores = _engine.Score(new[] { rewrite, generic }, situation, context, new RelationshipAnalysis());
+
+        Assert.Equal("rewrite_user_intent", scores.OrderByDescending(x => x.Total).First().Candidate.Move);
+    }
+
+    [Fact]
     public void Score_ShouldDetect_WordBoundaryBasedChatPraise()
     {
         var candidates = new List<SocialMoveCandidate>

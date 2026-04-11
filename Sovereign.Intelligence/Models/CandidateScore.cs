@@ -26,5 +26,6 @@ public sealed class CandidateScore
     public double Total => ComputedTotal;
     public double ChatStyleMismatchPenalty { get; set; }
     public double ChatNaturalnessBoost { get; set; }
+    public double RewriteIntentBoost { get; set; }
 }
 
