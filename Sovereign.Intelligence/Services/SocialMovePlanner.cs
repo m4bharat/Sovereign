@@ -17,8 +17,15 @@ public sealed class SocialMovePlanner : ISocialMovePlanner
                 new SocialMoveCandidate { Move = "no_reply", Rationale = "Skip only if the user input is too incomplete to rewrite safely." }
             };
         }
+
         var moves = situation.Type switch
         {
+            "compose_post" => new[]
+{
+                new SocialMoveCandidate { Move = "draft_post", Rationale = "Draft a standalone LinkedIn post from the user's prompt." },
+                new SocialMoveCandidate { Move = "rewrite_user_intent", Rationale = "Turn the rough post idea into a clean post draft." },
+                new SocialMoveCandidate { Move = "outline_post", Rationale = "Create a structured post if the prompt is still broad." }
+            },
             "milestone" => new[]
             {
                 new SocialMoveCandidate { Move = "congratulate", Rationale = "Milestone and public celebration." },

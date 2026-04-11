@@ -73,7 +73,11 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
                 ParentContextText = request.ParentContextText,
                 NearbyContextText = TrimForReplyMode(request.NearbyContextText, interactionMode),
                 InteractionMode = interactionMode,
-                InteractionMetadata = BuildInteractionMetadata(request.InteractionMetadata, normalizedMessage, interactionMode)
+                InteractionMetadata = BuildInteractionMetadata(
+                                    request.InteractionMetadata,
+                                    normalizedMessage,
+                                    interactionMode,
+                                    request.Surface)
             };
         }
 
@@ -124,20 +128,30 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
             ParentContextText = interactionMode == "chat" ? request.ParentContextText : string.Empty,
             NearbyContextText = TrimForReplyMode(request.NearbyContextText, interactionMode),
             InteractionMode = interactionMode,
-            InteractionMetadata = BuildInteractionMetadata(request.InteractionMetadata, normalizedMessage, interactionMode)
+            InteractionMetadata = BuildInteractionMetadata(
+                                    request.InteractionMetadata,
+                                    normalizedMessage,
+                                    interactionMode,
+                                    request.Surface)
         };
     }
 
     private static Dictionary<string, string> BuildInteractionMetadata(
         IReadOnlyDictionary<string, string>? input,
         string normalizedMessage,
-        string interactionMode)
+        string interactionMode,
+        string? surface)
     {
         var interactionMetadata = input != null
             ? new Dictionary<string, string>(input, StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        interactionMetadata["rewrite_intent"] = LooksLikeRoughRewriteIntent(normalizedMessage, interactionMode).ToString();
+        interactionMetadata["rewrite_intent"] =
+            LooksLikeRoughRewriteIntent(normalizedMessage, interactionMode).ToString();
+
+        interactionMetadata["compose_intent"] =
+            LooksLikeComposePrompt(normalizedMessage, interactionMode, surface).ToString();
+
         return interactionMetadata;
     }
 
@@ -176,6 +190,31 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
         }
 
         return false;
+    }
+
+    private static bool LooksLikeComposePrompt(string? message, string? interactionMode, string? surface)
+    {
+        if (!string.Equals(interactionMode, "compose", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(surface, "start_post", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var text = (message ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var starters = new[]
+        {
+        "write about",
+        "write a post",
+        "post about",
+        "draft a post",
+        "create a post",
+        "linkedin post about",
+        "write on",
+        "share about"
+    };
+
+        return starters.Any(s => text.StartsWith(s));
     }
 
     private static string ResolveInteractionMode(AssembleAiContextRequest request)

@@ -44,6 +44,24 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
 
     public SocialSituation Detect(MessageContext context)
     {
+        if (string.Equals(context.InteractionMode, "compose", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase))
+        {
+            var composeIntent =
+                context.InteractionMetadata != null &&
+                context.InteractionMetadata.TryGetValue("compose_intent", out var rawComposeIntent) &&
+                bool.TryParse(rawComposeIntent, out var isComposeIntent) &&
+                isComposeIntent;
+
+            return new SocialSituation
+            {
+                Type = composeIntent ? "compose_post" : "compose_post",
+                Summary = composeIntent
+                    ? "The user provided a rough prompt for drafting a new post."
+                    : "The user wants help composing a standalone post."
+            };
+        }
+
         if (string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) &&
             context.InteractionMetadata != null &&
             context.InteractionMetadata.TryGetValue("rewrite_intent", out var rewriteIntent) &&

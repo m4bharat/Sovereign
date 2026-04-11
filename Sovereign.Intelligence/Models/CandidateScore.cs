@@ -27,5 +27,6 @@ public sealed class CandidateScore
     public double ChatStyleMismatchPenalty { get; set; }
     public double ChatNaturalnessBoost { get; set; }
     public double RewriteIntentBoost { get; set; }
+    public double ComposePostBoost { get; set; }
 }
 

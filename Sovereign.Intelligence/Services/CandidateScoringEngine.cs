@@ -119,11 +119,13 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 ParticipationWithoutPositionPenalty = CalculateParticipationWithoutPositionPenalty(candidate, context),
                 CtaParticipationPenalty = ComputeCtaParticipationPenalty(candidate, context),
                 ChatStyleMismatchPenalty = 0.0,
-                ChatNaturalnessBoost = 0.0
+                ChatNaturalnessBoost = 0.0,
+                RewriteIntentBoost = 0.0,
+                ComposePostBoost = 0.0
             };
+
             candidate.GenericPenalty = score.GenericPenalty;
 
-            // Compute chat-specific adjustments and include them in the score
             var chatStyleMismatch = ComputeChatStyleMismatchPenalty(candidate, context);
             var chatNaturalnessBoost = ComputeChatNaturalnessBoost(candidate, context);
             score.ChatStyleMismatchPenalty = chatStyleMismatch;
@@ -137,6 +139,10 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             var rewriteIntentBoost = ComputeRewriteIntentBoost(candidate, context, situation);
             score.RewriteIntentBoost = rewriteIntentBoost;
             score.ComputedTotal += rewriteIntentBoost;
+
+            var composePostBoost = ComputeComposePostBoost(candidate, context, situation);
+            score.ComposePostBoost = composePostBoost;
+            score.ComputedTotal += composePostBoost;
 
             if (IsDisqualifiedAsGenericPraise(candidate, context, score) ||
                 IsDisqualifiedForCtaPost(candidate, context, score) ||
@@ -337,7 +343,7 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             return 0.92;
         }
 
-        return 0.70; // Default relationship fit score
+        return 0.70;
     }
 
     private static double ScoreRiskAdjustedValue(RelationshipAnalysis analysis, string move)
@@ -370,10 +376,6 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return analysis.ReplyUrgencyHint > 0.8 ? 0.90 : 0.70;
     }
 
-    /// <summary>
-    /// Scores the depth of insight in a reply.
-    /// High scores indicate system-level thinking, constraints, reframing, or substantial extensions beyond praise.
-    /// </summary>
     private static double CalculateInsightDepth(SocialMoveCandidate candidate, MessageContext context)
     {
         var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
@@ -391,7 +393,7 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         if (reply.Contains("because") || reply.Contains("when") || reply.Contains("where"))
             score += 0.10;
 
-        if (reply.Length > 80 && reply.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length >= 12)
+        if (reply.Length > 80 && reply.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 12)
             score += 0.08;
 
         var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty}".ToLowerInvariant();
@@ -409,10 +411,6 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return Clamp01(score);
     }
 
-    /// <summary>
-    /// Scores generic praise penalty. Higher scores indicate more generic/empty praise.
-    /// This penalty is applied to the total when generic praise patterns are detected.
-    /// </summary>
     private static double CalculateGenericPraisePenalty(SocialMoveCandidate candidate, MessageContext context)
     {
         var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
@@ -487,7 +485,6 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
 
         var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
 
-        // Heuristics: penalize broadcast/comment-like phrasing in chat
         if (reply.StartsWith("great post") || reply.Contains("thanks for sharing") || reply.Contains("check out"))
             return 0.40;
 
@@ -501,7 +498,6 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         SocialMoveCandidate candidate,
         MessageContext context)
     {
-
         if (!((context.InteractionMode ?? string.Empty).Equals("chat", StringComparison.OrdinalIgnoreCase)))
             return 0.0;
 
@@ -514,15 +510,15 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             return 0.05;
 
         if (Regex.IsMatch(reply, @"\b(i'm|i am|i'll|i'd|i've)\b") ||
-                reply.Contains("let me know") ||
-                reply.Contains("happy to") ||
-                reply.Contains("appreciate it") ||
-                reply.Contains("thanks so much") ||
-                reply.Contains("sounds good") ||
-                reply.Contains("sure"))
-                    {
-                        return 0.20;
-                    }
+            reply.Contains("let me know") ||
+            reply.Contains("happy to") ||
+            reply.Contains("appreciate it") ||
+            reply.Contains("thanks so much") ||
+            reply.Contains("sounds good") ||
+            reply.Contains("sure"))
+        {
+            return 0.20;
+        }
 
         return 0.0;
     }
@@ -562,14 +558,11 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             }
         }
 
-        // Very short praise-only replies are usually low value.
         if (text.Length < 20)
         {
             penalty += 0.04;
         }
 
-        // If the reply does not reference anything specific while source text exists,
-        // it is more likely to be generic filler.
         if (!string.IsNullOrWhiteSpace(context.SourceText))
         {
             var source = context.SourceText.ToLowerInvariant();
@@ -611,13 +604,10 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return 0.0;
     }
 
-    /// <summary>
-    /// Scores engagement cost penalty. Higher values indicate long, verbose replies on weak relationships.
-    /// </summary>
     private static double CalculateEngagementCost(SocialMoveCandidate candidate, RelationshipAnalysis relationship)
     {
         var reply = candidate.Reply ?? string.Empty;
-        var words = reply.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length;
+        var words = reply.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
 
         double cost = 0.0;
 
@@ -735,14 +725,10 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                score.Specificity <= 0.20;
     }
 
-    /// <summary>
-    /// Detects if a reply is mostly praise with no insight signals.
-    /// Returns true if reply contains 2+ praise tokens and no insight signals.
-    /// </summary>
     private static bool IsMostlyPraise(string reply)
     {
         var cleaned = reply.Trim().ToLowerInvariant();
-        var words = cleaned.Split(' ', System.StringSplitOptions.RemoveEmptyEntries);
+        var words = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         if (words.Length <= 6 && GenericPraisePhrases.Any(p => cleaned.Contains(p)))
             return true;
@@ -958,6 +944,26 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return false;
     }
 
+    private static double ComputeComposePostBoost(
+        SocialMoveCandidate candidate,
+        MessageContext context,
+        SocialSituation situation)
+    {
+        if (!string.Equals(situation.Type, "compose_post", StringComparison.OrdinalIgnoreCase))
+            return 0.0;
+
+        if (string.Equals(candidate.Move, "draft_post", StringComparison.OrdinalIgnoreCase))
+            return 0.22;
+
+        if (string.Equals(candidate.Move, "rewrite_user_intent", StringComparison.OrdinalIgnoreCase))
+            return 0.16;
+
+        if (string.Equals(candidate.Move, "outline_post", StringComparison.OrdinalIgnoreCase))
+            return 0.08;
+
+        return 0.0;
+    }
+
     private static bool MeetsCtaThresholds(CandidateScore score)
     {
         return score.CTAResponseQuality >= 0.24 &&
@@ -1015,11 +1021,9 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
 
         double score = 0.0;
 
-        // Reward framing before question
         if (reply.Contains("\n\n") || reply.Split('?')[0].Split('.', StringSplitOptions.RemoveEmptyEntries).Length >= 1)
             score += 0.25;
 
-        // Reward specific anchors
         var anchors = new[]
         {
             "client work", "live projects", "real-world", "ramp",
@@ -1030,11 +1034,9 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         var anchorHits = anchors.Count(a => reply.Contains(a));
         score += Math.Min(0.30, anchorHits * 0.08);
 
-        // Reward sharp question shapes
         if (reply.Contains("what tends to") || reply.Contains("what pattern") || reply.Contains("what separates"))
             score += 0.20;
 
-        // Penalize generic stems
         var genericStems = new[]
         {
             "what do you think",
@@ -1047,7 +1049,6 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         var genericHits = genericStems.Count(g => reply.Contains(g));
         score -= Math.Min(0.35, genericHits * 0.15);
 
-        // Penalize question-only replies on high-signal posts
         if (RequiresFraming(context) && IsBareQuestion(reply))
             score -= 0.30;
 
@@ -1069,4 +1070,3 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return situation == "educational" || situation == "opinion" || situation == "recruitment" || situation == "milestone" || situation == "opportunity";
     }
 }
-
