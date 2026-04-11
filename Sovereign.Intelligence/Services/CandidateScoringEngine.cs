@@ -144,11 +144,45 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
             score.ComposePostBoost = composePostBoost;
             score.ComputedTotal += composePostBoost;
 
+            var noReplyPenalty = ComputeNoReplyPenalty(candidate, context);
+            score.NoReplyPenalty = noReplyPenalty;
+            score.ComputedTotal -= noReplyPenalty;
+
+            var rewriteFeedReplyBoost = ComputeRewriteFeedReplyBoost(candidate, situation);
+            score.RewriteFeedReplyBoost = rewriteFeedReplyBoost;
+            score.ComputedTotal += rewriteFeedReplyBoost;
+
             if (IsDisqualifiedAsGenericPraise(candidate, context, score) ||
                 IsDisqualifiedForCtaPost(candidate, context, score) ||
                 (IsCtaEngagementPost(context) && !MeetsCtaThresholds(score)))
             {
                 score.ComputedTotal = 0.0;
+            }
+            // HARD BLOCK no_reply on drafted feed replies / compose
+            if (string.Equals(candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
+            {
+                var hasDraft = !string.IsNullOrWhiteSpace(context.Message);
+                var isFeedReply = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
+                var isCompose = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
+                var hasSource = !string.IsNullOrWhiteSpace(context.SourceText);
+
+                if ((isFeedReply && hasDraft && hasSource) ||
+                    (isCompose && hasDraft))
+                {
+                    score.ComputedTotal = Math.Min(score.ComputedTotal, 0.05);
+                }
+            }
+
+            // Force rewrite/draft candidates to stay competitive when a user already typed something
+            var isRewriteMove =
+                string.Equals(candidate.Move, "rewrite_user_intent", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(candidate.Move, "draft_post", StringComparison.OrdinalIgnoreCase);
+
+            var hasDraft2 = !string.IsNullOrWhiteSpace(context.Message);
+
+            if (isRewriteMove && hasDraft2)
+            {
+                score.ComputedTotal = Math.Max(score.ComputedTotal, 0.65);
             }
 
             return score;
@@ -179,19 +213,50 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
 
     private static double ScoreSocialFit(SocialSituation situation, string move)
     {
-        return situation.Type switch
+        var situationType = (situation?.Type ?? string.Empty).ToLowerInvariant();
+        var normalizedMove = (move ?? string.Empty).Trim().ToLowerInvariant();
+
+        return situationType switch
         {
-            "milestone" when move is "congratulate" or "congratulate_encourage" or "appreciate_journey" => 0.96,
-            "educational" when move is "appreciate" or "add_insight" or "ask_relevant_question" => 0.92,
-            "opinion" when move is "agree" or "add_nuance" or "add_insight" or "ask_relevant_question" => 0.94,
-            "question" when move is "answer_supportively" => 0.98,
-            "question" when move is "ask_relevant_question" => 0.92,
-            "update" when move == "acknowledge" || move == "appreciate" => 0.88,
-            "direct_message" when move == "direct_message" || move == "engage_privately" || move == "ask_details" => 0.94,
-            "celebratory" when move == "defer" || move == "congratulate" || move == "praise" => 0.94,
-            "achievement" when move == "light_touch" || move == "praise" || move == "congratulate" => 0.92,
-            "reflection" when move == "engage" => 0.88,
-            _ when move == "appreciate" || move == "encourage" => 0.72,
+            "rewrite_feed_reply" when normalizedMove is "rewrite_user_intent" => 0.98,
+            "rewrite_feed_reply" when normalizedMove is "light_touch" => 0.90,
+            "rewrite_feed_reply" when normalizedMove is "add_specific_insight" => 0.88,
+            "rewrite_feed_reply" when normalizedMove is "no_reply" => 0.18,
+
+            "milestone" when normalizedMove is "congratulate" or "congratulate_encourage" or "appreciate_journey" or "light_touch" => 0.96,
+
+            "educational" when normalizedMove is "appreciate" or "add_insight" or "add_specific_insight" or "ask_relevant_question" or "light_touch" => 0.92,
+
+            "opinion" when normalizedMove is "agree" or "add_nuance" or "add_insight" or "add_specific_insight" or "ask_relevant_question" or "light_touch" => 0.94,
+
+            "question" when normalizedMove is "answer_supportively" or "answer_question" => 0.98,
+            "question" when normalizedMove is "ask_relevant_question" or "light_touch_question" => 0.92,
+
+            "cta_or_question" when normalizedMove is "answer_question" or "add_specific_insight" => 0.97,
+            "cta_or_question" when normalizedMove is "light_touch_question" => 0.90,
+            "cta_or_question" when normalizedMove is "no_reply" => 0.20,
+
+            "update" when normalizedMove is "acknowledge" or "appreciate" or "light_touch" => 0.88,
+
+            "direct_message" when normalizedMove is "respond_helpfully" or "acknowledge_and_continue" or "rewrite_user_intent" => 0.95,
+            "direct_message" when normalizedMove is "direct_message" or "engage_privately" or "ask_details" => 0.90,
+
+            "rewrite_direct_message" when normalizedMove is "rewrite_user_intent" => 0.98,
+            "rewrite_direct_message" when normalizedMove is "respond_helpfully" => 0.90,
+
+            "compose_post" when normalizedMove is "draft_post" => 0.98,
+            "compose_post" when normalizedMove is "rewrite_user_intent" => 0.92,
+            "compose_post" when normalizedMove is "outline_post" => 0.86,
+
+            "celebratory" when normalizedMove is "defer" or "congratulate" or "praise" or "light_touch" => 0.94,
+
+            "achievement" when normalizedMove is "light_touch" or "praise" or "congratulate" or "add_specific_insight" => 0.92,
+
+            "reflection" when normalizedMove is "engage" or "add_specific_insight" or "light_touch" => 0.88,
+
+            _ when normalizedMove is "appreciate" or "encourage" or "light_touch" => 0.72,
+            _ when normalizedMove is "add_specific_insight" or "answer_question" or "respond_helpfully" or "draft_post" or "rewrite_user_intent" => 0.76,
+            _ when normalizedMove is "no_reply" => 0.30,
             _ => 0.55
         };
     }
@@ -582,6 +647,25 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         return Math.Min(penalty, 0.45);
     }
 
+    private static double ComputeRewriteFeedReplyBoost(
+    SocialMoveCandidate candidate,
+    SocialSituation situation)
+    {
+        if (!string.Equals(situation.Type, "rewrite_feed_reply", StringComparison.OrdinalIgnoreCase))
+            return 0.0;
+
+        if (string.Equals(candidate.Move, "rewrite_user_intent", StringComparison.OrdinalIgnoreCase))
+            return 0.22;
+
+        if (string.Equals(candidate.Move, "light_touch", StringComparison.OrdinalIgnoreCase))
+            return 0.12;
+
+        if (string.Equals(candidate.Move, "add_specific_insight", StringComparison.OrdinalIgnoreCase))
+            return 0.10;
+
+        return 0.0;
+    }
+
     private static double ComputeSpecificityBoost(
         string? reply,
         MessageContext context)
@@ -661,6 +745,28 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         }
 
         return false;
+    }
+
+    private static double ComputeNoReplyPenalty(
+        SocialMoveCandidate candidate,
+        MessageContext context)
+    {
+        var isNoReply = string.Equals(candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase);
+        if (!isNoReply)
+            return 0.0;
+
+        var hasDraft = !string.IsNullOrWhiteSpace(context.Message);
+        var isFeedReply = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
+        var hasSource = !string.IsNullOrWhiteSpace(context.SourceText);
+
+        if (isFeedReply && hasDraft && hasSource)
+            return 0.75;
+
+        var isCompose = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
+        if (isCompose && hasDraft)
+            return 0.90;
+
+        return 0.0;
     }
 
     private static double ComputeCtaParticipationPenalty(

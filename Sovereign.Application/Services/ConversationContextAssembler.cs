@@ -57,7 +57,7 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
             {
                 UserId = request.UserId,
                 ContactId = request.ContactId,
-            Message = normalizedMessage,
+                Message = normalizedMessage,
                 RelationshipRole = request.RelationshipRole,
                 RecentSummary = string.Empty,
                 LastTopicSummary = string.Empty,
@@ -74,10 +74,10 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
                 NearbyContextText = TrimForReplyMode(request.NearbyContextText, interactionMode),
                 InteractionMode = interactionMode,
                 InteractionMetadata = BuildInteractionMetadata(
-                                    request.InteractionMetadata,
-                                    normalizedMessage,
-                                    interactionMode,
-                                    request.Surface)
+                                        request.InteractionMetadata,
+                                        normalizedMessage,
+                                        interactionMode,
+                                        request.Surface)
             };
         }
 
@@ -98,7 +98,6 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
             Message = normalizedMessage,
             RelationshipRole = request.RelationshipRole,
 
-            // For reply mode, reduce thread/history dominance.
             RecentSummary = interactionMode == "reply"
                 ? string.Empty
                 : BuildRecentSummary(recentMessages),
@@ -164,7 +163,6 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
         if (string.IsNullOrWhiteSpace(text))
             return false;
 
-        // Short imperative/fragments are usually rewrite requests, not final phrasing.
         if (text.Length <= 40 && !text.Contains("?"))
         {
             var starters = new[]
@@ -204,15 +202,15 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
 
         var starters = new[]
         {
-        "write about",
-        "write a post",
-        "post about",
-        "draft a post",
-        "create a post",
-        "linkedin post about",
-        "write on",
-        "share about"
-    };
+            "write about",
+            "write a post",
+            "post about",
+            "draft a post",
+            "create a post",
+            "linkedin post about",
+            "write on",
+            "share about"
+        };
 
         return starters.Any(s => text.StartsWith(s));
     }
@@ -221,7 +219,6 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
     {
         var surface = (request.Surface ?? string.Empty).Trim().ToLowerInvariant();
 
-        // Surface is the strongest signal.
         if (surface is "messaging_chat" or "chatbox" or "dm_chat" or "linkedin_chat")
             return "chat";
 
@@ -231,7 +228,6 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
         if (surface is "start_post" or "create_post" or "compose_post" or "write_post")
             return "compose";
 
-        // Content fallback when surface is missing or noisy.
         if (!string.IsNullOrWhiteSpace(request.SourceText))
             return "reply";
 

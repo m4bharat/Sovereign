@@ -11,7 +11,7 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
         var filtered = scoredCandidates
             .Where(score => score.HallucinationPenalty < 0.35)
             .Where(score => score.Tone >= 0.20)
-            .Where(score => score.Total >= 0.45) // Minimum threshold for replying
+            .Where(score => score.Total >= 0.45)
             .Where(score => !IsLowQualityQuestion(score))
             .Where(score => !IsDisqualifiedForCtaPost(score.Candidate, context, score))
             .Where(score => !IsCtaEngagementPost(context) || MeetsCtaThresholds(score))
@@ -39,12 +39,34 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
             };
         }
 
-        var primaryWinner = filtered[0].Candidate;
-        var alternatives = filtered.Skip(1).Take(2).Select(score => score.Candidate).ToArray();
+        var winner = filtered[0].Candidate;
+
+        var hasDraft = !string.IsNullOrWhiteSpace(context.Message);
+        var isFeedReply = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
+        var isCompose = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
+
+        if (string.Equals(winner.Move, "no_reply", StringComparison.OrdinalIgnoreCase) &&
+            hasDraft &&
+            (isFeedReply || isCompose))
+        {
+            var fallback = filtered
+                .FirstOrDefault(c => !string.Equals(c.Candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase));
+
+            if (fallback != null)
+            {
+                winner = fallback.Candidate;
+            }
+        }
+
+        var alternatives = filtered
+            .Where(score => !ReferenceEquals(score.Candidate, winner))
+            .Select(score => score.Candidate)
+            .Take(2)
+            .ToArray();
 
         return new WinnerSelectionResult
         {
-            Winner = primaryWinner,
+            Winner = winner,
             Alternatives = alternatives
         };
     }
@@ -56,11 +78,9 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
 
         var reply = (score.Candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
 
-        // Disqualify bare questions on high-signal posts
         if (IsBareQuestion(reply) && RequiresFraming(score))
             return true;
 
-        // Disqualify generic stems
         var genericStems = new[]
         {
             "what do you think",
@@ -84,9 +104,7 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
 
     private static bool RequiresFraming(CandidateScore score)
     {
-        // For now, only disqualify if it's clearly a bare question on a high-signal post
-        // We'll need to pass context through to make this more accurate
-        return false; // Temporarily disable to avoid breaking existing tests
+        return false;
     }
 
     private static readonly string[] CtaSignals =

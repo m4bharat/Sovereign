@@ -62,6 +62,18 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
             };
         }
 
+        if (string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(context.Message) &&
+            context.Message.Trim().Length <= 30 &&
+            !string.IsNullOrWhiteSpace(context.SourceText))
+                {
+                    return new SocialSituation
+                    {
+                        Type = "rewrite_feed_reply",
+                        Summary = "The user provided a rough draft for a feed reply that should be rewritten into a specific comment."
+                    };
+                }
+
         if (string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) &&
             context.InteractionMetadata != null &&
             context.InteractionMetadata.TryGetValue("rewrite_intent", out var rewriteIntent) &&

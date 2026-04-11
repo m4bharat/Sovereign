@@ -28,5 +28,7 @@ public sealed class CandidateScore
     public double ChatNaturalnessBoost { get; set; }
     public double RewriteIntentBoost { get; set; }
     public double ComposePostBoost { get; set; }
+    public double NoReplyPenalty { get; set; }
+    public double RewriteFeedReplyBoost { get; set; }
 }
 

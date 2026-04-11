@@ -73,7 +73,6 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             cancellationToken);
 
         var relationshipContext = BuildRelationshipContext(input);
-
         var relationshipInsight = _relationshipIntelligenceEngine.Analyze(relationshipContext);
 
         var relationshipAnalysis = new RelationshipAnalysis
@@ -90,8 +89,13 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         messageContext = MergeDerivedSignals(messageContext, relationshipAnalysis);
 
         var situation = _socialSituationDetector.Detect(messageContext);
+        messageContext = ApplySituation(messageContext, situation);
+
         var moveCandidates = _socialMovePlanner.Plan(situation, relationshipAnalysis);
-        var replyCandidates = _candidateReplyGenerator.Generate(moveCandidates, messageContext);
+        var replyCandidates = _candidateReplyGenerator.Generate(moveCandidates, messageContext)
+                             .Where(c => !string.IsNullOrWhiteSpace(c.Reply) || c.Move == "no_reply")
+                             .ToList();
+
         var scoredCandidates = _candidateScoringEngine.Score(
             replyCandidates,
             situation,
@@ -101,13 +105,39 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         var winnerSelection = _winnerSelectionEngine.SelectBest(scoredCandidates, messageContext);
         var winner = winnerSelection.Winner;
 
-        if (ShouldSkipReply(winner, input.AllowNoReply))
+
+        if (ShouldSkipReply(winner, input.AllowNoReply, messageContext))
         {
-            return BuildDecisionResult(winner, winnerSelection.Alternatives, allowNoReply: true);
+            return BuildDecisionResult(
+             winner,
+             winnerSelection.Alternatives,
+             messageContext,
+             situation,
+             allowNoReply: true);
+        }
+
+        // If a no_reply candidate still wins for strong drafted surfaces,
+        // fall back to the best non-no_reply candidate before polishing.
+        if (string.Equals(winner.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
+        {
+            var fallback = winnerSelection.Alternatives
+                .FirstOrDefault(x => !string.Equals(x.Move, "no_reply", StringComparison.OrdinalIgnoreCase));
+
+            if (fallback != null)
+            {
+              
+                winner = fallback;
+            }
         }
 
         var polishedWinner = await TryPolishWinner(winner, messageContext, cancellationToken);
-        return BuildDecisionResult(polishedWinner, winnerSelection.Alternatives);
+
+
+        return BuildDecisionResult(
+                                polishedWinner,
+                                winnerSelection.Alternatives,
+                                messageContext,
+                                situation);
     }
 
     private static Dictionary<string, string> BuildInteractionMetadata(DecisionV2Input input)
@@ -149,11 +179,43 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             NearbyContextText = context.NearbyContextText,
             InteractionMode = context.InteractionMode,
             InteractionMetadata = context.InteractionMetadata,
-
             RiskScore = analysis.RiskScore,
             OpportunityScore = analysis.OpportunityScore,
             DesiredTone = InferDesiredTone(context, analysis),
             SituationType = context.SituationType
+        };
+    }
+
+    private static MessageContext ApplySituation(MessageContext context, SocialSituation situation)
+    {
+        return new MessageContext
+        {
+            UserId = context.UserId,
+            ContactId = context.ContactId,
+            Message = context.Message,
+            RelationshipRole = context.RelationshipRole,
+            RecentSummary = context.RecentSummary,
+            LastTopicSummary = context.LastTopicSummary,
+            RelevantMemories = context.RelevantMemories,
+            LastInteractionDays = context.LastInteractionDays,
+            TotalInteractions = context.TotalInteractions,
+            RecentRelationshipSummary = context.RecentRelationshipSummary,
+            Platform = context.Platform,
+            RecentMessages = context.RecentMessages,
+            MemoryFacts = context.MemoryFacts,
+            Surface = context.Surface,
+            CurrentUrl = context.CurrentUrl,
+            SourceAuthor = context.SourceAuthor,
+            SourceTitle = context.SourceTitle,
+            SourceText = context.SourceText,
+            ParentContextText = context.ParentContextText,
+            NearbyContextText = context.NearbyContextText,
+            InteractionMode = context.InteractionMode,
+            InteractionMetadata = context.InteractionMetadata,
+            RiskScore = context.RiskScore,
+            OpportunityScore = context.OpportunityScore,
+            DesiredTone = context.DesiredTone,
+            SituationType = situation.Type
         };
     }
 
@@ -166,9 +228,25 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         return "concise_human";
     }
 
-    private static bool ShouldSkipReply(SocialMoveCandidate winner, bool allowNoReply)
+    private static bool ShouldSkipReply(
+        SocialMoveCandidate winner,
+        bool allowNoReply,
+        MessageContext context)
     {
-        if (!allowNoReply) return false;
+        if (!allowNoReply)
+            return false;
+
+        var hasUserDraft = !string.IsNullOrWhiteSpace(context.Message);
+        var isFeedReply = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
+        var hasSource = !string.IsNullOrWhiteSpace(context.SourceText);
+        var isCompose = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
+
+        if (isFeedReply && hasUserDraft && hasSource)
+            return false;
+
+        if (isCompose && hasUserDraft)
+            return false;
+
         return winner.Move == "no_reply" || winner.RiskScore > 0.8;
     }
 
@@ -208,25 +286,32 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
     }
 
     private static DecisionV2Result BuildDecisionResult(
-        SocialMoveCandidate winner,
-        IReadOnlyList<SocialMoveCandidate> alternatives,
-        bool allowNoReply = false)
+    SocialMoveCandidate winner,
+    IReadOnlyList<SocialMoveCandidate> alternatives,
+    MessageContext context,
+    SocialSituation situation,
+    bool allowNoReply = false)
     {
-        var suppressReply = allowNoReply && winner.Move == "no_reply";
+        var isNoReplyMove = string.Equals(winner.Move, "no_reply", StringComparison.OrdinalIgnoreCase);
+        var suppressReply = allowNoReply && isNoReplyMove;
 
         return new DecisionV2Result
         {
             Move = winner.Move,
             Rationale = winner.Rationale,
-            ShouldReply = !suppressReply,
-            Reply = suppressReply ? string.Empty : winner.Reply,
+            ShouldReply = !isNoReplyMove && !suppressReply,
+            Reply = (!isNoReplyMove && !suppressReply) ? winner.Reply : string.Empty,
             Confidence = winner.GenerationConfidence,
-            Alternatives = alternatives.Select(a => a.Reply).ToList(),
+            Alternatives = alternatives
+                .Where(a => !string.IsNullOrWhiteSpace(a.Reply))
+                .Select(a => a.Reply)
+                .ToList(),
+
             RelationshipEffect = winner.RelationshipEffect,
             RiskScore = winner.RiskScore,
             OpportunityScore = winner.OpportunityScore,
-            SituationType = winner.SituationType,
-            Tone = winner.Tone
+            SituationType = situation.Type,
+            Tone = context.DesiredTone ?? string.Empty
         };
     }
 }

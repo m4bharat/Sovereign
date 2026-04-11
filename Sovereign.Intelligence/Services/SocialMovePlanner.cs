@@ -20,8 +20,16 @@ public sealed class SocialMovePlanner : ISocialMovePlanner
 
         var moves = situation.Type switch
         {
+            "rewrite_feed_reply" => new[]
+            {
+                new SocialMoveCandidate { Move = "rewrite_user_intent", Rationale = "Rewrite the rough comment into a specific feed reply." },
+                new SocialMoveCandidate { Move = "light_touch", Rationale = "Keep it concise but more grounded in the post." },
+                new SocialMoveCandidate{ Move = "add_specific_insight", Rationale = "Add a specific interpretation tied to the source text." },
+                new SocialMoveCandidate { Move = "no_reply", Rationale = "Skip only if the draft is unusable." }
+            },
+
             "compose_post" => new[]
-{
+            {
                 new SocialMoveCandidate { Move = "draft_post", Rationale = "Draft a standalone LinkedIn post from the user's prompt." },
                 new SocialMoveCandidate { Move = "rewrite_user_intent", Rationale = "Turn the rough post idea into a clean post draft." },
                 new SocialMoveCandidate { Move = "outline_post", Rationale = "Create a structured post if the prompt is still broad." }
