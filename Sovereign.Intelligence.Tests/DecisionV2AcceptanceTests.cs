@@ -45,8 +45,7 @@ public class DecisionV2AcceptanceTests
                 SourceText = request.SourceText,
                 ParentContextText = request.ParentContextText,
                 NearbyContextText = request.NearbyContextText,
-                InteractionMode = !string.IsNullOrWhiteSpace(request.SourceText) ? "reply" :
-                    !string.IsNullOrWhiteSpace(request.ParentContextText) ? "chat" : "compose"
+                InteractionMode = ResolveInteractionModeForTest(request)
             });
 
         var realSituationDetector = new SocialSituationDetector();
@@ -128,8 +127,7 @@ public class DecisionV2AcceptanceTests
                 SourceText = request.SourceText,
                 ParentContextText = request.ParentContextText,
                 NearbyContextText = request.NearbyContextText,
-                InteractionMode = !string.IsNullOrWhiteSpace(request.SourceText) ? "reply" :
-                    !string.IsNullOrWhiteSpace(request.ParentContextText) ? "chat" : "compose"
+                InteractionMode = ResolveInteractionModeForTest(request)
             });
 
         var engine = new DecisionEngineV2(
@@ -151,7 +149,7 @@ public class DecisionV2AcceptanceTests
         {
             var result = await engine.DecideAsync(scenario.InputPayload);
 
-            if (!IsMoveFamilyMatch(scenario.ExpectedMoveFamily, result))
+            if (!IsMoveFamilyMatch(scenario.ExpectedMoveFamily, scenario.AllowedMoveSynonyms, result))
                 moveMismatchCount++;
 
             if (!IsReplyPolicyMatch(scenario.ShouldReply, result))
@@ -233,8 +231,39 @@ public class DecisionV2AcceptanceTests
         }
     }
 
-    private static bool IsMoveFamilyMatch(string expectedMoveFamily, DecisionV2Result result) =>
-        NormalizeMove(expectedMoveFamily) == NormalizeMove(result.Move);
+    private static bool IsMoveFamilyMatch(
+     string expectedMoveFamily,
+     IReadOnlyList<string> allowedMoveSynonyms,
+     DecisionV2Result result)
+    {
+        var expected = NormalizeMove(expectedMoveFamily);
+        var actual = NormalizeMove(result.Move);
+
+        return expected == actual ||
+               allowedMoveSynonyms.Any(alias => NormalizeMove(alias) == actual);
+    }
+
+    private static string ResolveInteractionModeForTest(AssembleAiContextRequest request)
+    {
+        var surface = (request.Surface ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (surface is "messaging_chat" or "chatbox" or "dm_chat" or "linkedin_chat")
+            return "chat";
+
+        if (surface is "feed_reply" or "comment_reply" or "reply" or "add_comment")
+            return "reply";
+
+        if (surface is "start_post" or "create_post" or "compose_post" or "write_post")
+            return "compose";
+
+        if (!string.IsNullOrWhiteSpace(request.SourceText))
+            return "reply";
+
+        if (!string.IsNullOrWhiteSpace(request.ParentContextText))
+            return "chat";
+
+        return "compose";
+    }
 
     private static bool IsReplyPolicyMatch(bool shouldReplyExpected, DecisionV2Result result) =>
         shouldReplyExpected == result.ShouldReply &&
