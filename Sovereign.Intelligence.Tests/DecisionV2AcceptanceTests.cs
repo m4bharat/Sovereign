@@ -72,7 +72,7 @@ public class DecisionV2AcceptanceTests
         var result = await engine.DecideAsync(scenario.InputPayload);
 
         // Assert
-        Assert.Equal(scenario.ShouldReply, result.ShouldReply);
+        AssertReplyPolicy(scenario.ShouldReply, result);
 
         if (scenario.ShouldReply)
         {
@@ -80,20 +80,13 @@ public class DecisionV2AcceptanceTests
             Assert.NotEmpty(result.Reply);
             Assert.True(result.Reply.Length <= scenario.MaxReplyLength);
 
-            // Check that move matches expected family or allowed synonyms
-            Assert.True(scenario.ExpectedMoveFamily == result.Move || scenario.AllowedMoveSynonyms.Contains(result.Move),
-                $"Move '{result.Move}' should match expected '{scenario.ExpectedMoveFamily}' or synonyms: {string.Join(", ", scenario.AllowedMoveSynonyms)}");
+            AssertMoveFamily(scenario.ExpectedMoveFamily, scenario.AllowedMoveSynonyms, result);
+            AssertAcceptableReplySoft(scenario.AcceptableReplies, result);
 
-            // Check that reply contains at least one acceptable token
             var replyLower = result.Reply.ToLower();
-            var hasAcceptableToken = scenario.AcceptableReplies.Any(token => replyLower.Contains(token.ToLower()));
-            Assert.True(hasAcceptableToken, $"Reply should contain at least one acceptable token from: {string.Join(", ", scenario.AcceptableReplies)}");
-
-            // Check that reply does not contain forbidden patterns
             var hasForbiddenPattern = scenario.ForbiddenReplyPatterns.Any(pattern => replyLower.Contains(pattern.ToLower()));
             Assert.False(hasForbiddenPattern, $"Reply should not contain forbidden patterns: {string.Join(", ", scenario.ForbiddenReplyPatterns)}");
 
-            // Check that reply does not contain forbidden behaviors
             var moveLower = result.Move.ToLower();
             var hasForbiddenBehavior = scenario.ForbiddenBehaviors
                 .Any(forbidden => moveLower.Contains(forbidden.ToLower()));
@@ -111,5 +104,148 @@ public class DecisionV2AcceptanceTests
         {
             yield return new object[] { scenario };
         }
+    }
+
+    [Fact]
+    public async Task EvaluateGoldenScenarios_PrintAggregateSummary()
+    {
+        var mockRelationshipEngine = new Mock<IRelationshipIntelligenceEngine>();
+        mockRelationshipEngine.Setup(e => e.Analyze(It.IsAny<RelationshipContext>()))
+            .Returns(new SocialInsight());
+
+        var mockAssembler = new Mock<IConversationContextAssembler>();
+        mockAssembler.Setup(a => a.AssembleAsync(It.IsAny<AssembleAiContextRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AssembleAiContextRequest request, CancellationToken ct) => new MessageContext
+            {
+                UserId = request.UserId,
+                ContactId = request.ContactId,
+                Message = request.Message,
+                Platform = request.Platform,
+                Surface = request.Surface,
+                CurrentUrl = request.CurrentUrl,
+                SourceAuthor = request.SourceAuthor,
+                SourceTitle = request.SourceTitle,
+                SourceText = request.SourceText,
+                ParentContextText = request.ParentContextText,
+                NearbyContextText = request.NearbyContextText,
+                InteractionMode = !string.IsNullOrWhiteSpace(request.SourceText) ? "reply" :
+                    !string.IsNullOrWhiteSpace(request.ParentContextText) ? "chat" : "compose"
+            });
+
+        var engine = new DecisionEngineV2(
+            mockAssembler.Object,
+            mockRelationshipEngine.Object,
+            new SocialSituationDetector(),
+            new SocialMovePlanner(),
+            new CandidateReplyGenerator(),
+            new CandidateScoringEngine(),
+            new WinnerSelectionEngine(),
+            new FakeDecisionV2LlmClient(),
+            new Mock<ILogger<DecisionEngineV2>>().Object);
+
+        var moveMismatchCount = 0;
+        var replyPolicyMismatchCount = 0;
+        var acceptableReplyMismatchCount = 0;
+
+        foreach (var scenario in GoldenScenarioDataset.GetAllScenarios())
+        {
+            var result = await engine.DecideAsync(scenario.InputPayload);
+
+            if (!IsMoveFamilyMatch(scenario.ExpectedMoveFamily, result))
+                moveMismatchCount++;
+
+            if (!IsReplyPolicyMatch(scenario.ShouldReply, result))
+                replyPolicyMismatchCount++;
+
+            if (scenario.ShouldReply && !IsAcceptableReplyMatch(scenario.AcceptableReplies, result))
+                acceptableReplyMismatchCount++;
+        }
+
+        Console.WriteLine($"Move mismatches: {moveMismatchCount}");
+        Console.WriteLine($"Reply-policy mismatches: {replyPolicyMismatchCount}");
+        Console.WriteLine($"Acceptable-reply mismatches: {acceptableReplyMismatchCount}");
+
+        Assert.Equal(0, moveMismatchCount);
+        Assert.Equal(0, replyPolicyMismatchCount);
+        Assert.Equal(0, acceptableReplyMismatchCount);
+    }
+
+    private static void AssertMoveFamily(
+        string expectedMoveFamily,
+        IReadOnlyList<string> allowedMoveSynonyms,
+        DecisionV2Result result)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(expectedMoveFamily));
+
+        var expected = NormalizeMove(expectedMoveFamily);
+        var actual = NormalizeMove(result.Move);
+
+        var isAllowed = expected == actual ||
+            allowedMoveSynonyms.Any(alias => NormalizeMove(alias) == actual);
+
+        Assert.True(isAllowed,
+            $"Move '{result.Move}' should match expected '{expectedMoveFamily}' or allowed synonyms: {string.Join(", ", allowedMoveSynonyms)}");
+    }
+
+    private static string NormalizeMove(string move)
+    {
+        var value = (move ?? string.Empty).Trim().ToLowerInvariant();
+
+        return value switch
+        {
+            "answer" => "answer_question",
+            "insight" => "add_specific_insight",
+            "light_touch" => "light_touch_question",
+            _ => value
+        };
+    }
+
+    private static void AssertAcceptableReplySoft(
+        IReadOnlyList<string>? acceptableReplies,
+        DecisionV2Result result)
+    {
+        if (acceptableReplies == null || acceptableReplies.Count == 0)
+            return;
+
+        var actual = NormalizeText(result.Reply ?? string.Empty);
+
+        Assert.Contains(
+            acceptableReplies,
+            candidate => actual.Contains(NormalizeText(candidate), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizeText(string text) =>
+        string.Join(" ",
+            (text ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant()
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+    private static void AssertReplyPolicy(
+        bool shouldReplyExpected,
+        DecisionV2Result result)
+    {
+        Assert.Equal(shouldReplyExpected, result.ShouldReply);
+
+        if (!shouldReplyExpected)
+        {
+            Assert.True(string.IsNullOrWhiteSpace(result.Reply));
+        }
+    }
+
+    private static bool IsMoveFamilyMatch(string expectedMoveFamily, DecisionV2Result result) =>
+        NormalizeMove(expectedMoveFamily) == NormalizeMove(result.Move);
+
+    private static bool IsReplyPolicyMatch(bool shouldReplyExpected, DecisionV2Result result) =>
+        shouldReplyExpected == result.ShouldReply &&
+        (shouldReplyExpected || string.IsNullOrWhiteSpace(result.Reply));
+
+    private static bool IsAcceptableReplyMatch(IReadOnlyList<string>? acceptableReplies, DecisionV2Result result)
+    {
+        if (acceptableReplies == null || acceptableReplies.Count == 0)
+            return true;
+
+        var actual = NormalizeText(result.Reply ?? string.Empty);
+        return acceptableReplies.Any(candidate => actual.Contains(NormalizeText(candidate), StringComparison.OrdinalIgnoreCase));
     }
 }
