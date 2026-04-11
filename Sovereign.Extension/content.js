@@ -1,47 +1,251 @@
 (() => {
-    const BUTTON_ID = "sovereign-linkedin-button";
-    const INJECTED_COMPOSERS = new Set();
+    const DEBUG = true;
+    const BUTTON_CLASS = "sovereign-linkedin-button";
+    const STATUS_CLASS = "sovereign-linkedin-status";
+    const SLOT_CLASS = "sovereign-action-slot";
 
-    function isVisible(node) {
-        return !!node && node.offsetParent !== null;
+    let scanTimer = null;
+    let observerStarted = false;
+    let lastFocusedComposer = null;
+
+    function log(...args) {
+        if (DEBUG) {
+            console.log("[Sovereign]", ...args);
+        }
     }
 
-    function findFeedContainerFromComposer(composer) {
-        if (!composer) return null;
+    function isElement(node) {
+        return !!node && node.nodeType === Node.ELEMENT_NODE;
+    }
 
-        return composer.closest('[role="listitem"]') ||
-            composer.closest(".feed-shared-update-v2") ||
-            composer.closest("article");
+    function isVisible(node) {
+        if (!node || !isElement(node)) return false;
+
+        const style = window.getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+
+        return !!(node.offsetParent || node.getClientRects().length);
+    }
+
+    function ensureStyles() {
+        if (document.getElementById("sovereign-inline-styles")) return;
+
+        const style = document.createElement("style");
+        style.id = "sovereign-inline-styles";
+        style.textContent = `
+            .${SLOT_CLASS} {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin: 8px 0;
+                padding: 4px 0;
+                flex-wrap: wrap;
+                position: relative;
+                z-index: 999999;
+            }
+
+            .${BUTTON_CLASS} {
+                background: #0a66c2;
+                color: #fff;
+                border: none;
+                border-radius: 999px;
+                padding: 6px 12px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 12px;
+                line-height: 1.2;
+                white-space: nowrap;
+                margin: 0;
+                z-index: 999999;
+            }
+
+            .${BUTTON_CLASS}[data-sovereign-busy="true"] {
+                opacity: 0.72;
+                cursor: wait;
+            }
+
+            .${STATUS_CLASS} {
+                font-size: 12px;
+                line-height: 1.3;
+                color: #666;
+                max-width: 420px;
+                word-break: break-word;
+            }
+
+            .${STATUS_CLASS}[data-type="error"] {
+                color: #b00020;
+            }
+
+            .${STATUS_CLASS}[data-type="success"] {
+                color: #1a7f37;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function debounceScan() {
+        if (scanTimer) clearTimeout(scanTimer);
+        scanTimer = setTimeout(() => {
+            scanForComposers();
+            tryInjectFromActiveElement();
+        }, 250);
+    }
+
+    function closestSafe(el, selector) {
+        try {
+            return el?.closest?.(selector) || null;
+        } catch {
+            return null;
+        }
+    }
+
+    function dedupe(items) {
+        return Array.from(new Set(items.filter(Boolean)));
+    }
+
+    function isEditableTextbox(el) {
+        if (!el || !isElement(el)) return false;
+
+        const isContentEditable = el.getAttribute("contenteditable") === "true";
+        const isProseMirror = el.matches?.(".ProseMirror, .tiptap.ProseMirror");
+
+        if (!isContentEditable && !isProseMirror) return false;
+
+        const role = el.getAttribute("role") || "";
+        const ariaMultiline = el.getAttribute("aria-multiline") || "";
+        const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+        const placeholder = (
+            el.getAttribute("aria-placeholder") ||
+            el.getAttribute("data-placeholder") ||
+            ""
+        ).toLowerCase();
+
+        return (
+            isProseMirror ||
+            role === "textbox" ||
+            ariaMultiline === "true" ||
+            ariaLabel.includes("write") ||
+            ariaLabel.includes("message") ||
+            ariaLabel.includes("text editor") ||
+            placeholder.includes("write") ||
+            placeholder.includes("message") ||
+            placeholder.includes("talk about")
+        );
+    }
+
+    function detectSurface(composer) {
+        if (!composer) return { surface: "unknown", container: null };
+
+        const shareBox = closestSafe(composer, ".share-box");
+        if (shareBox) {
+            return { surface: "start_post", container: shareBox };
+        }
+
+        const msgForm = closestSafe(composer, ".msg-form");
+        if (msgForm) {
+            return { surface: "messaging_chat", container: msgForm };
+        }
+
+        const msgBubble = closestSafe(composer, ".msg-overlay-conversation-bubble");
+        if (msgBubble) {
+            return { surface: "messaging_chat", container: msgBubble };
+        }
+
+        const feedContainer =
+            closestSafe(composer, '[role="listitem"]') ||
+            closestSafe(composer, ".feed-shared-update-v2") ||
+            closestSafe(composer, "article");
+
+        if (feedContainer) {
+            return { surface: "feed_reply", container: feedContainer };
+        }
+
+        return {
+            surface: "unknown",
+            container: composer.parentElement || null
+        };
+    }
+
+    function getInjectionHost(composer) {
+        const { surface, container } = detectSurface(composer);
+
+        if (surface === "start_post") {
+            return (
+                container.querySelector(".share-creation-state__footer") ||
+                container.querySelector(".share-creation-state__additional-toolbar") ||
+                container.querySelector(".share-creation-state") ||
+                container
+            );
+        }
+
+        if (surface === "messaging_chat") {
+            const msgForm = closestSafe(composer, ".msg-form") || container;
+            return (
+                msgForm.querySelector(".msg-form__footer") ||
+                msgForm.querySelector(".msg-form__msg-content-container") ||
+                msgForm
+            );
+        }
+
+        if (surface === "feed_reply") {
+            return composer.parentElement || container;
+        }
+
+        return composer.parentElement || container;
+    }
+
+    function getOrCreateActionSlot(host, surface) {
+        if (!host) return null;
+
+        let slot = host.querySelector(`:scope > .${SLOT_CLASS}[data-surface="${surface}"]`);
+        if (slot) return slot;
+
+        slot = document.createElement("div");
+        slot.className = SLOT_CLASS;
+        slot.setAttribute("data-surface", surface);
+        host.prepend(slot);
+        return slot;
+    }
+
+    function getOrCreateStatus(slot) {
+        let status = slot.querySelector(`.${STATUS_CLASS}`);
+        if (status) return status;
+
+        status = document.createElement("div");
+        status.className = STATUS_CLASS;
+        status.setAttribute("data-type", "info");
+        slot.appendChild(status);
+        return status;
+    }
+
+    function setStatus(slot, text, type = "info") {
+        const status = getOrCreateStatus(slot);
+        status.textContent = text || "";
+        status.setAttribute("data-type", type);
+    }
+
+    function clearStatus(slot) {
+        const status = slot.querySelector(`.${STATUS_CLASS}`);
+        if (status) {
+            status.textContent = "";
+            status.setAttribute("data-type", "info");
+        }
+    }
+
+    function getComposerText(composer) {
+        return (composer.innerText || composer.textContent || "")
+            .replace(/\u200B/g, "")
+            .trim();
     }
 
     function getSourceAuthor(container) {
         if (!container) return "";
 
         const candidates = container.querySelectorAll('a[href*="/in/"], a[href*="/company/"]');
-
         for (const link of candidates) {
-            const p = link.querySelector("p");
-            if (p) {
-                const text = p.innerText.trim();
-                if (
-                    text &&
-                    !text.toLowerCase().includes("follow") &&
-                    !text.toLowerCase().includes("suggested")
-                ) {
-                    return text;
-                }
-            }
-
-            const span = link.querySelector("span");
-            if (span) {
-                const text = span.innerText.trim();
-                if (
-                    text &&
-                    !text.toLowerCase().includes("follow") &&
-                    !text.toLowerCase().includes("suggested")
-                ) {
-                    return text;
-                }
+            const text = (link.innerText || "").trim();
+            if (text && !/follow|suggested/i.test(text) && text.length < 120) {
+                return text;
             }
         }
 
@@ -51,38 +255,167 @@
     function getSourceText(container) {
         if (!container) return "";
 
-        const textEl = container.querySelector('[data-testid="expandable-text-box"]');
-        return textEl ? textEl.innerText.trim().slice(0, 3500) : "";
-    }
+        const selectors = [
+            '[data-testid="expandable-text-box"]',
+            ".feed-shared-update-v2__description",
+            ".update-components-text",
+            ".break-words"
+        ];
 
-    function getSourceTitle(container) {
-        if (!container) return "";
-
-        const pTags = container.querySelectorAll("p");
-        for (const p of pTags) {
-            const text = p.innerText.trim();
-            if (!text) continue;
-
-            if (
-                !text.toLowerCase().includes("suggested") &&
-                !text.toLowerCase().includes("follow") &&
-                text !== getSourceAuthor(container) &&
-                (text.includes("|") || text.length > 30)
-            ) {
-                return text;
+        for (const selector of selectors) {
+            const el = container.querySelector(selector);
+            const text = (el?.innerText || "").trim();
+            if (text) {
+                return text.slice(0, 3500);
             }
         }
 
         return "";
     }
 
-    function buildGenericContext(composer) {
-        const container = findFeedContainerFromComposer(composer);
+    function getSourceTitle(container) {
+        if (!container) return "";
 
-        if (container) {
+        const nodes = container.querySelectorAll("p, span");
+        for (const node of nodes) {
+            const text = (node.innerText || "").trim();
+            if (!text) continue;
+            if (/follow|suggested/i.test(text)) continue;
+            if (text.length > 30 || text.includes("|")) return text.slice(0, 300);
+        }
+
+        return "";
+    }
+
+    function getMessageRecipientName(composer) {
+        const bubble = closestSafe(composer, ".msg-overlay-conversation-bubble");
+        const title =
+            bubble?.querySelector(".msg-overlay-bubble-header__title span") ||
+            bubble?.querySelector(".msg-overlay-bubble-header__title");
+
+        return (title?.innerText || "").trim() || "linkedin-message-contact";
+    }
+
+    function getLatestMessageContext(composer) {
+        const bubble = closestSafe(composer, ".msg-overlay-conversation-bubble");
+        if (!bubble) {
+            return {
+                latestMessage: "",
+                nearbyMessages: "",
+                recentRelationshipSummary: ""
+            };
+        }
+
+        const messageItems = Array.from(
+            bubble.querySelectorAll(".msg-s-event-listitem")
+        );
+
+        const visibleMessages = messageItems
+            .map((item) => {
+                const sender =
+                    item.querySelector(".msg-s-message-group__name")?.innerText?.trim() || "";
+                const body =
+                    item.querySelector(".msg-s-event-listitem__body")?.innerText?.trim() || "";
+
+                if (!body) return null;
+
+                return {
+                    sender,
+                    body,
+                    combined: sender ? `${sender}: ${body}` : body
+                };
+            })
+            .filter(Boolean);
+
+        const latestMessage = visibleMessages.length
+            ? visibleMessages[visibleMessages.length - 1].combined
+            : "";
+
+        const nearbyMessages = visibleMessages
+            .slice(-5)
+            .map((m) => m.combined)
+            .join("\n");
+
+        const recentRelationshipSummary = visibleMessages
+            .slice(-3)
+            .map((m) => m.combined)
+            .join(" | ");
+
+        return {
+            latestMessage,
+            nearbyMessages,
+            recentRelationshipSummary
+        };
+    }
+
+    function buildContext(composer) {
+        const { surface, container } = detectSurface(composer);
+
+        if (surface === "start_post") {
+            return {
+                ContactId: "linkedin-post-compose",
+                RelationshipRole: "Peer",
+                Platform: "linkedin",
+                Surface: "start_post",
+                CurrentUrl: window.location.href,
+                SourceAuthor: "",
+                SourceTitle: "LinkedIn post composer",
+                SourceText: "",
+                ParentContextText: "",
+                NearbyContextText: "",
+                LastInteractionDays: 0,
+                TotalInteractions: 0,
+                ReciprocityScore: 0,
+                MomentumScore: 0,
+                PowerDifferential: 0,
+                EmotionalTemperature: 0,
+                RecentRelationshipSummary: "",
+                RelevantMemories: [],
+                AllowNoReply: true,
+                RequestAlternatives: false,
+                InteractionMetadata: {
+                    mode: "post",
+                    pageTitle: document.title
+                }
+            };
+        }
+
+        if (surface === "messaging_chat") {
+            const recipient = getMessageRecipientName(composer);
+            const messageContext = getLatestMessageContext(composer);
+
+            return {
+                ContactId: recipient || "linkedin-message-contact",
+                RelationshipRole: "Peer",
+                Platform: "linkedin",
+                Surface: "messaging_chat",
+                CurrentUrl: window.location.href,
+                SourceAuthor: recipient || "",
+                SourceTitle: "LinkedIn message thread",
+                SourceText: messageContext.latestMessage || "",
+                ParentContextText: messageContext.latestMessage || "",
+                NearbyContextText: messageContext.nearbyMessages || "",
+                LastInteractionDays: 0,
+                TotalInteractions: 0,
+                ReciprocityScore: 0,
+                MomentumScore: 0,
+                PowerDifferential: 0,
+                EmotionalTemperature: 0,
+                RecentRelationshipSummary: messageContext.recentRelationshipSummary || "",
+                RelevantMemories: [],
+                AllowNoReply: true,
+                RequestAlternatives: false,
+                InteractionMetadata: {
+                    mode: "message",
+                    pageTitle: document.title
+                }
+            };
+        }
+
+        if (surface === "feed_reply") {
             const sourceAuthor = getSourceAuthor(container);
-            const sourceText = getSourceText(container);
             const sourceTitle = getSourceTitle(container);
+            const sourceText = getSourceText(container);
 
             return {
                 ContactId: sourceAuthor || "linkedin-post-contact",
@@ -90,11 +423,21 @@
                 Platform: "linkedin",
                 Surface: "feed_reply",
                 CurrentUrl: window.location.href,
-                SourceAuthor: sourceAuthor,
-                SourceText: sourceText,
-                SourceTitle: sourceTitle,
-                ParentContextText: sourceText,
+                SourceAuthor: sourceAuthor || "",
+                SourceTitle: sourceTitle || "",
+                SourceText: sourceText || "",
+                ParentContextText: sourceText || "",
                 NearbyContextText: "",
+                LastInteractionDays: 0,
+                TotalInteractions: 0,
+                ReciprocityScore: 0,
+                MomentumScore: 0,
+                PowerDifferential: 0,
+                EmotionalTemperature: 0,
+                RecentRelationshipSummary: "",
+                RelevantMemories: [],
+                AllowNoReply: true,
+                RequestAlternatives: false,
                 InteractionMetadata: {
                     mode: "reply",
                     pageTitle: document.title
@@ -109,10 +452,20 @@
             Surface: "post_compose",
             CurrentUrl: window.location.href,
             SourceAuthor: "",
-            SourceText: "",
             SourceTitle: "",
+            SourceText: "",
             ParentContextText: "",
             NearbyContextText: "",
+            LastInteractionDays: 0,
+            TotalInteractions: 0,
+            ReciprocityScore: 0,
+            MomentumScore: 0,
+            PowerDifferential: 0,
+            EmotionalTemperature: 0,
+            RecentRelationshipSummary: "",
+            RelevantMemories: [],
+            AllowNoReply: true,
+            RequestAlternatives: false,
             InteractionMetadata: {
                 mode: "compose",
                 pageTitle: document.title
@@ -120,8 +473,42 @@
         };
     }
 
+    function createPayload(composer) {
+        const context = buildContext(composer);
+
+        return {
+            UserId: "user-001",
+            ContactId: context.ContactId || "linkedin-compose-contact",
+            Message: getComposerText(composer),
+            Platform: context.Platform || "linkedin",
+            Surface: context.Surface || "post_compose",
+            CurrentUrl: context.CurrentUrl || "",
+            SourceAuthor: context.SourceAuthor || "",
+            SourceTitle: context.SourceTitle || "",
+            SourceText: context.SourceText || "",
+            ParentContextText: context.ParentContextText || "",
+            NearbyContextText: context.NearbyContextText || "",
+            RelationshipRole: context.RelationshipRole || "Peer",
+            LastInteractionDays: context.LastInteractionDays ?? 0,
+            TotalInteractions: context.TotalInteractions ?? 0,
+            ReciprocityScore: context.ReciprocityScore ?? 0,
+            MomentumScore: context.MomentumScore ?? 0,
+            PowerDifferential: context.PowerDifferential ?? 0,
+            EmotionalTemperature: context.EmotionalTemperature ?? 0,
+            RecentRelationshipSummary: context.RecentRelationshipSummary || "",
+            RelevantMemories: Array.isArray(context.RelevantMemories) ? context.RelevantMemories : [],
+            AllowNoReply: typeof context.AllowNoReply === "boolean" ? context.AllowNoReply : true,
+            RequestAlternatives: typeof context.RequestAlternatives === "boolean" ? context.RequestAlternatives : false,
+            InteractionMetadata: context.InteractionMetadata || {}
+        };
+    }
+
     function extractSuggestion(data) {
         if (!data) return "";
+
+        if (typeof data === "string") {
+            return data.trim();
+        }
 
         return (
             data.reply ||
@@ -130,103 +517,251 @@
             data.rewrittenMessage ||
             data.message ||
             data.output ||
+            data.suggestion ||
+            data.text ||
+            data.content ||
+            data.result?.reply ||
+            data.result?.message ||
+            data.result?.output ||
+            data.result?.suggestion ||
+            data.decision?.reply ||
+            data.decision?.message ||
+            data.bestOption?.text ||
+            data.best_option?.text ||
+            data.candidate?.text ||
+            data.candidates?.[0]?.text ||
+            data.alternatives?.[0]?.text ||
             ""
         ).trim();
     }
 
-    function injectButton(composer) {
-        if (!isVisible(composer)) return;
-        if (!composer.parentElement) return;
-        if (composer.parentElement.querySelector(`#${BUTTON_ID}`)) return;
-
-        const btn = document.createElement("button");
-        btn.id = BUTTON_ID;
-        btn.innerText = "Suggest with Sovereign";
-        btn.style.cssText = "background:#0a66c2; color:white; border:none; border-radius:16px; padding:4px 12px; margin:4px; cursor:pointer; font-weight:600; font-size:12px; z-index:9999;";
-
-        btn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const context = buildGenericContext(composer);
-            const message = composer.innerText.trim();
-
-            const payload = {
-                UserId: "user-001",
-                ContactId: context.ContactId || "linkedin-compose-contact",
-                Message: message,
-                RelationshipRole: context.RelationshipRole || "Peer",
-                Platform: context.Platform || "linkedin",
-                Surface: context.Surface || "post_compose",
-                CurrentUrl: context.CurrentUrl || "",
-                SourceAuthor: context.SourceAuthor || "",
-                SourceTitle: context.SourceTitle || "",
-                SourceText: context.SourceText || "",
-                ParentContextText: context.ParentContextText || "",
-                NearbyContextText: context.NearbyContextText || "",
-                InteractionMetadata: context.InteractionMetadata || {}
-            };
-
-            console.log("Sovereign Context Captured:", context);
-            console.log("Sovereign Final Payload:", payload);
-
-            btn.innerText = "Thinking...";
-
-            chrome.runtime.sendMessage(
-                {
-                    type: "SOVEREIGN_DECIDE",
-                    payload
-                },
-                (res) => {
-                    btn.innerText = "Suggest with Sovereign";
-
-                    if (chrome.runtime.lastError) {
-                        console.error("Sovereign extension error:", chrome.runtime.lastError);
-                        return;
-                    }
-
-                    console.log("Sovereign API Response:", res);
-
-                    const reply = extractSuggestion(res?.data);
-
-                    if (reply) {
-                        composer.focus();
-                        document.execCommand("insertText", false, reply);
-                    }
-                }
-            );
-        };
-
-        composer.parentElement.appendChild(btn);
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
     }
 
-    function scanForComposers() {
-        const composers = document.querySelectorAll(".ProseMirror, [contenteditable='true']:not(#suggestionBox)");
+    function insertTextIntoEditor(composer, text) {
+        if (!composer) return false;
 
-        composers.forEach((composer) => {
-            if (!isVisible(composer)) return;
-            if (!composer.parentElement) return;
-            if (composer.parentElement.querySelector(`#${BUTTON_ID}`)) return;
-            if (INJECTED_COMPOSERS.has(composer)) return;
+        try {
+            composer.focus();
+            composer.innerHTML = `<p>${escapeHtml(text)}</p>`;
 
-            INJECTED_COMPOSERS.add(composer);
-            injectButton(composer);
+            composer.dispatchEvent(new InputEvent("input", {
+                bubbles: true,
+                inputType: "insertText",
+                data: text
+            }));
+            composer.dispatchEvent(new Event("change", { bubbles: true }));
+            composer.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: " " }));
+            composer.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: " " }));
+
+            return true;
+        } catch (error) {
+            console.error("[Sovereign] insert failed:", error);
+            return false;
+        }
+    }
+
+    function handleSuggestClick(composer, button, slot) {
+        const message = getComposerText(composer);
+        if (!message) {
+            setStatus(slot, "Write something first.", "error");
+            return;
+        }
+
+        const payload = createPayload(composer);
+        log("request payload", payload);
+
+        button.textContent = "Thinking...";
+        button.setAttribute("data-sovereign-busy", "true");
+        setStatus(slot, "Generating suggestion...", "info");
+
+        chrome.runtime.sendMessage({ type: "SOVEREIGN_DECIDE", payload }, (res) => {
+            button.textContent = "Suggest with Sovereign";
+            button.setAttribute("data-sovereign-busy", "false");
+
+            console.log("[Sovereign] full response from background:", res);
+            console.log("[Sovereign] response data:", res?.data);
+
+            if (chrome.runtime.lastError) {
+                setStatus(slot, chrome.runtime.lastError.message || "Extension error.", "error");
+                return;
+            }
+
+            if (!res?.ok) {
+                setStatus(slot, res?.error || "Request failed.", "error");
+                return;
+            }
+
+            const suggestion = extractSuggestion(res?.data);
+            console.log("[Sovereign] extracted suggestion:", suggestion);
+
+            if (!suggestion) {
+                console.warn("[Sovereign] No suggestion extracted from:", res?.data);
+                setStatus(slot, "No suggestion returned. Check console for response shape.", "error");
+                return;
+            }
+
+            if (!insertTextIntoEditor(composer, suggestion)) {
+                setStatus(slot, "Suggestion received, but insert failed.", "error");
+                return;
+            }
+
+            setStatus(slot, "Suggestion inserted.", "success");
+            setTimeout(() => clearStatus(slot), 2500);
         });
     }
 
-    // Use MutationObserver for reliable surface detection instead of interval polling
-    const observer = new MutationObserver(() => {
-        scanForComposers();
-    });
+    function injectButton(composer) {
+        if (!composer || !isVisible(composer)) return;
 
-    // Start observing the document for changes
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: false,
-        characterData: false
-    });
+        const { surface } = detectSurface(composer);
+        const host = getInjectionHost(composer);
 
-    // Initial scan on load
+        log("inject attempt", { surface, composer, host });
+
+        if (!host || !isElement(host)) return;
+
+        const slot = getOrCreateActionSlot(host, surface);
+        if (!slot) return;
+
+        let button = slot.querySelector(`.${BUTTON_CLASS}`);
+        if (!button) {
+            button = document.createElement("button");
+            button.className = BUTTON_CLASS;
+            button.type = "button";
+            button.textContent = "Suggest with Sovereign";
+
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleSuggestClick(composer, button, slot);
+            });
+
+            slot.prepend(button);
+            getOrCreateStatus(slot);
+        }
+    }
+
+    function findCandidateEditorsByQuery() {
+        const all = Array.from(document.querySelectorAll('[contenteditable="true"], .ProseMirror'));
+        const results = [];
+
+        for (const el of all) {
+            if (!isVisible(el)) continue;
+            if (!isEditableTextbox(el)) continue;
+
+            const { surface } = detectSurface(el);
+            if (surface === "unknown") continue;
+
+            results.push(el);
+        }
+
+        return dedupe(results);
+    }
+
+    function findComposerFromPath(path) {
+        for (const node of path || []) {
+            if (!isElement(node)) continue;
+
+            if (isEditableTextbox(node)) {
+                const { surface } = detectSurface(node);
+                if (surface !== "unknown") return node;
+            }
+
+            const nested = node.querySelector?.('[contenteditable="true"], .ProseMirror');
+            if (nested && isEditableTextbox(nested)) {
+                const { surface } = detectSurface(nested);
+                if (surface !== "unknown") return nested;
+            }
+        }
+
+        return null;
+    }
+
+    function getDeepActiveElement(root = document) {
+        let active = root.activeElement;
+
+        while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+            active = active.shadowRoot.activeElement;
+        }
+
+        return active;
+    }
+
+    function tryInjectFromActiveElement() {
+        const active = getDeepActiveElement(document);
+        if (!active) return;
+
+        let composer = null;
+
+        if (isEditableTextbox(active)) {
+            composer = active;
+        } else {
+            composer =
+                closestSafe(active, '[contenteditable="true"]') ||
+                closestSafe(active, ".ProseMirror");
+        }
+
+        if (composer && isEditableTextbox(composer)) {
+            const { surface } = detectSurface(composer);
+            if (surface !== "unknown") {
+                log("activeElement composer", composer, surface);
+                lastFocusedComposer = composer;
+                injectButton(composer);
+            }
+        }
+    }
+
+    function scanForComposers() {
+        ensureStyles();
+
+        const composers = findCandidateEditorsByQuery();
+        log("composers found", composers.length, composers);
+
+        composers.forEach(injectButton);
+
+        if (lastFocusedComposer) {
+            injectButton(lastFocusedComposer);
+        }
+    }
+
+    function startObserver() {
+        if (observerStarted || !document.body) return;
+        observerStarted = true;
+
+        const observer = new MutationObserver(() => {
+            debounceScan();
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    function onFocusOrClick(event) {
+        const path = event.composedPath ? event.composedPath() : [event.target];
+        const composer = findComposerFromPath(path);
+
+        log("event path composer", composer, event.type);
+
+        if (composer) {
+            lastFocusedComposer = composer;
+            injectButton(composer);
+        } else {
+            tryInjectFromActiveElement();
+        }
+    }
+
+    ensureStyles();
+    startObserver();
     scanForComposers();
+
+    document.addEventListener("focusin", onFocusOrClick, true);
+    document.addEventListener("click", onFocusOrClick, true);
+    window.addEventListener("load", debounceScan);
 })();
