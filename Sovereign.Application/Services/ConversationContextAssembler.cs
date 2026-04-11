@@ -33,7 +33,7 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
         AssembleAiContextRequest request,
         CancellationToken ct = default)
     {
-        var interactionMode = DetectInteractionMode(request);
+        var interactionMode = ResolveInteractionMode(request);
 
         var thread = await _threadRepository.GetByUserAndContactAsync(
             request.UserId,
@@ -56,7 +56,7 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
             {
                 UserId = request.UserId,
                 ContactId = request.ContactId,
-                Message = request.Message,
+                Message = NormalizeUserMessage(request.Message),
                 RelationshipRole = request.RelationshipRole,
                 RecentSummary = string.Empty,
                 LastTopicSummary = string.Empty,
@@ -90,7 +90,7 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
         {
             UserId = request.UserId,
             ContactId = request.ContactId,
-            Message = request.Message,
+            Message = NormalizeUserMessage(request.Message),
             RelationshipRole = request.RelationshipRole,
 
             // For reply mode, reduce thread/history dominance.
@@ -127,19 +127,44 @@ public sealed class ConversationContextAssembler : IConversationContextAssembler
         };
     }
 
-    private static string DetectInteractionMode(AssembleAiContextRequest request)
+    private static string ResolveInteractionMode(AssembleAiContextRequest request)
     {
-        if (!string.IsNullOrWhiteSpace(request.SourceText))
-        {
+        var surface = (request.Surface ?? string.Empty).Trim().ToLowerInvariant();
+
+        // Surface is the strongest signal.
+        if (surface is "messaging_chat" or "chatbox" or "dm_chat" or "linkedin_chat")
+            return "chat";
+
+        if (surface is "feed_reply" or "comment_reply" or "reply" or "add_comment")
             return "reply";
-        }
+
+        if (surface is "start_post" or "create_post" or "compose_post" or "write_post")
+            return "compose";
+
+        // Content fallback when surface is missing or noisy.
+        if (!string.IsNullOrWhiteSpace(request.SourceText))
+            return "reply";
 
         if (!string.IsNullOrWhiteSpace(request.ParentContextText))
-        {
             return "chat";
-        }
 
         return "compose";
+    }
+
+    private static string NormalizeUserMessage(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        var text = input.Trim();
+
+        text = text.Replace("\r\n", "\n");
+        text = text.Replace("\t", " ");
+
+        while (text.Contains("  "))
+            text = text.Replace("  ", " ");
+
+        return text;
     }
 
     private static string BuildMemorySearchText(
