@@ -352,4 +352,34 @@ public class CandidateScoringEngineTests
         Assert.True(concreteScore.Total > genericScore.Total, "Concrete opinion should score higher than generic engagement on CTA posts.");
         Assert.True(concreteScore.InsightDepth > genericScore.InsightDepth, "Concrete reply should have higher insight depth.");
     }
+
+    [Fact]
+    public void Score_ShouldPenalize_CommentStyleReply_OnChatSurface()
+    {
+        // Arrange
+        var candidates = new List<SocialMoveCandidate>
+        {
+            new SocialMoveCandidate { Move = "respond_helpfully", Reply = "Great post! Loved it — check out my profile for more.", RequiresPolish = false },
+            new SocialMoveCandidate { Move = "respond_helpfully", Reply = "Hey — congrats! Happy to help, let me know if you want resources.", RequiresPolish = false }
+        };
+
+        var situation = new SocialSituation { Type = "direct_message" };
+        var context = new MessageContext
+        {
+            Message = "Hey, can you share more about X?",
+            InteractionMode = "chat",
+            SourceText = "Private chat message"
+        };
+        var relationship = new RelationshipAnalysis { ReciprocityScore = 0.7 };
+
+        // Act
+        var scores = _engine.Score(candidates, situation, context, relationship);
+
+        // Assert
+        var commentStyle = scores.First(s => s.Candidate.Reply.Contains("check out my profile"));
+        var natural = scores.First(s => s.Candidate.Reply.Contains("happy to help"));
+
+        Assert.True(natural.Total > commentStyle.Total, "Natural DM-style reply should score higher than comment-style broadcast in chat.");
+        Assert.True(commentStyle.ChatStyleMismatchPenalty > 0.0, "Comment-style reply should receive a chat-style mismatch penalty.");
+    }
 }

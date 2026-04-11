@@ -44,6 +44,15 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
 
     public SocialSituation Detect(MessageContext context)
     {
+        if ((context.InteractionMode ?? string.Empty).Equals("chat", StringComparison.OrdinalIgnoreCase))
+        {
+            return new SocialSituation
+            {
+                Type = "direct_message",
+                Summary = "This is a messaging/chat interaction that should sound natural and direct."
+            };
+        }
+
         if (LooksLikeCtaOrQuestion(context))
         {
             return new SocialSituation

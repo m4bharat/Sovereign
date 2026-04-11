@@ -117,9 +117,17 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                 CTAResponseQuality = CalculateCTAResponseQuality(candidate, context),
                 PositioningStrength = CalculatePositioningStrength(candidate, context),
                 ParticipationWithoutPositionPenalty = CalculateParticipationWithoutPositionPenalty(candidate, context),
-                CtaParticipationPenalty = ComputeCtaParticipationPenalty(candidate, context)
+                CtaParticipationPenalty = ComputeCtaParticipationPenalty(candidate, context),
+                ChatStyleMismatchPenalty = 0.0,
+                ChatNaturalnessBoost = 0.0
             };
             candidate.GenericPenalty = score.GenericPenalty;
+
+            // Compute chat-specific adjustments and include them in the score
+            var chatStyleMismatch = ComputeChatStyleMismatchPenalty(candidate, context);
+            var chatNaturalnessBoost = ComputeChatNaturalnessBoost(candidate, context);
+            score.ChatStyleMismatchPenalty = chatStyleMismatch;
+            score.ChatNaturalnessBoost = chatNaturalnessBoost;
 
             score.ComputedTotal = ComputeTotal(score, context);
 
@@ -464,6 +472,43 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         }
 
         return Math.Min(penalty, 0.45);
+    }
+
+    private static double ComputeChatStyleMismatchPenalty(
+        SocialMoveCandidate candidate,
+        MessageContext context)
+    {
+        if (!((context.InteractionMode ?? string.Empty).Equals("chat", StringComparison.OrdinalIgnoreCase)))
+            return 0.0;
+
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+
+        // Heuristics: penalize broadcast/comment-like phrasing in chat
+        if (reply.StartsWith("great post") || reply.Contains("thanks for sharing") || reply.Contains("check out"))
+            return 0.40;
+
+        if (reply.Length > 20 && reply.Length < 140 && Regex.IsMatch(reply, "\b(great|nice|amazing|congrats|well done)\b"))
+            return 0.25;
+
+        return 0.0;
+    }
+
+    private static double ComputeChatNaturalnessBoost(
+        SocialMoveCandidate candidate,
+        MessageContext context)
+    {
+        if (!((context.InteractionMode ?? string.Empty).Equals("chat", StringComparison.OrdinalIgnoreCase)))
+            return 0.0;
+
+        var reply = (candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (Regex.IsMatch(reply, "\b(i'm|i am|i'll|i'd|i've)\b") || reply.Contains("let me know") || reply.Contains("happy to"))
+            return 0.20;
+
+        if (reply.Length > 0 && reply.Length <= 200 && !Regex.IsMatch(reply, "\b(as per|in conclusion|furthermore)\b"))
+            return 0.05;
+
+        return 0.0;
     }
 
     private static double ComputeGenericPenalty(
@@ -906,7 +951,9 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                    score.GenericPenalty -
                    (0.12 * score.ParticipationWithoutPositionPenalty) -
                    (0.08 * score.EngagementCost) -
-                   score.CtaParticipationPenalty;
+                   score.CtaParticipationPenalty -
+                   score.ChatStyleMismatchPenalty +
+                   score.ChatNaturalnessBoost;
         }
 
         return (0.22 * score.Relevance) +
@@ -922,7 +969,9 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
                (0.12 * score.GenericPraisePenalty) -
                score.GenericPenalty -
                (0.08 * score.EngagementCost) -
-               score.CtaParticipationPenalty;
+               score.CtaParticipationPenalty -
+               score.ChatStyleMismatchPenalty +
+               score.ChatNaturalnessBoost;
     }
 
     private static double CalculateQuestionQuality(SocialMoveCandidate candidate, MessageContext context)

@@ -99,9 +99,10 @@ public sealed class SocialMovePlanner : ISocialMovePlanner
             },
             "direct_message" => new[]
             {
-                new SocialMoveCandidate { Move = "direct_message", Rationale = "Move the conversation to a private channel." },
-                new SocialMoveCandidate { Move = "engage_privately", Rationale = "Offer a private follow-up conversation." },
-                new SocialMoveCandidate { Move = "ask_details", Rationale = "Request more context in a private thread." }
+                new SocialMoveCandidate { Move = "respond_helpfully", Rationale = "Respond naturally and directly in chat." },
+                new SocialMoveCandidate { Move = "acknowledge_and_continue", Rationale = "Acknowledge briefly and keep the conversation moving." },
+                new SocialMoveCandidate { Move = "rewrite_user_intent", Rationale = "Rewrite rough user wording into a natural DM." },
+                new SocialMoveCandidate { Move = "no_reply", Rationale = "Skip only if the user intent is empty or clearly not answerable." }
             },
             "low_signal" => new[]
             {
