@@ -103,6 +103,14 @@
         return Array.from(new Set(items.filter(Boolean)));
     }
 
+    function normalizeText(text, maxLen = 3500) {
+        return (text || "")
+            .replace(/\u200B/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, maxLen);
+    }
+
     function isEditableTextbox(el) {
         if (!el || !isElement(el)) return false;
 
@@ -171,9 +179,9 @@
 
         if (surface === "start_post") {
             return (
-                container.querySelector(".share-creation-state__footer") ||
-                container.querySelector(".share-creation-state__additional-toolbar") ||
-                container.querySelector(".share-creation-state") ||
+                container?.querySelector(".share-creation-state__footer") ||
+                container?.querySelector(".share-creation-state__additional-toolbar") ||
+                container?.querySelector(".share-creation-state") ||
                 container
             );
         }
@@ -181,8 +189,8 @@
         if (surface === "messaging_chat") {
             const msgForm = closestSafe(composer, ".msg-form") || container;
             return (
-                msgForm.querySelector(".msg-form__footer") ||
-                msgForm.querySelector(".msg-form__msg-content-container") ||
+                msgForm?.querySelector(".msg-form__footer") ||
+                msgForm?.querySelector(".msg-form__msg-content-container") ||
                 msgForm
             );
         }
@@ -233,9 +241,7 @@
     }
 
     function getComposerText(composer) {
-        return (composer.innerText || composer.textContent || "")
-            .replace(/\u200B/g, "")
-            .trim();
+        return normalizeText(composer.innerText || composer.textContent || "", 3000);
     }
 
     function getSourceAuthor(container) {
@@ -243,7 +249,7 @@
 
         const candidates = container.querySelectorAll('a[href*="/in/"], a[href*="/company/"]');
         for (const link of candidates) {
-            const text = (link.innerText || "").trim();
+            const text = normalizeText(link.innerText || "", 120);
             if (text && !/follow|suggested/i.test(text) && text.length < 120) {
                 return text;
             }
@@ -252,25 +258,33 @@
         return "";
     }
 
-    function getSourceText(container) {
-        if (!container) return "";
-
-        const selectors = [
-            '[data-testid="expandable-text-box"]',
-            ".feed-shared-update-v2__description",
-            ".update-components-text",
-            ".break-words"
-        ];
+    function getTextFromSelectors(root, selectors, maxLen = 3500) {
+        if (!root) return "";
 
         for (const selector of selectors) {
-            const el = container.querySelector(selector);
-            const text = (el?.innerText || "").trim();
-            if (text) {
-                return text.slice(0, 3500);
-            }
+            const el = root.querySelector(selector);
+            const text = normalizeText(el?.innerText || "", maxLen);
+            if (text) return text;
         }
 
         return "";
+    }
+
+    function getSourceText(container) {
+        if (!container) return "";
+
+        return getTextFromSelectors(
+            container,
+            [
+                '[data-testid="expandable-text-box"]',
+                ".feed-shared-inline-show-more-text",
+                ".feed-shared-update-v2__description",
+                ".update-components-text",
+                ".update-components-text-view",
+                ".break-words"
+            ],
+            3500
+        );
     }
 
     function getSourceTitle(container) {
@@ -278,26 +292,67 @@
 
         const nodes = container.querySelectorAll("p, span");
         for (const node of nodes) {
-            const text = (node.innerText || "").trim();
+            const text = normalizeText(node.innerText || "", 300);
             if (!text) continue;
             if (/follow|suggested/i.test(text)) continue;
-            if (text.length > 30 || text.includes("|")) return text.slice(0, 300);
+            if (text.length > 30 || text.includes("|")) return text;
         }
 
         return "";
     }
 
+    function getNearbyComments(container) {
+        if (!container) return "";
+
+        const selectors = [
+            ".comments-comment-item__main-content",
+            ".comments-comment-item-content-body",
+            ".comments-comment-item [dir='ltr']",
+            ".comments-comments-list__comment-item span[dir='ltr']"
+        ];
+
+        const seen = new Set();
+        const out = [];
+
+        for (const selector of selectors) {
+            const nodes = container.querySelectorAll(selector);
+            for (const node of nodes) {
+                const text = normalizeText(node.innerText || "", 300);
+                if (!text) continue;
+                if (seen.has(text)) continue;
+                seen.add(text);
+                out.push(text);
+                if (out.length >= 4) {
+                    return out.join("\n").slice(0, 1200);
+                }
+            }
+        }
+
+        return out.join("\n").slice(0, 1200);
+    }
+
     function getMessageRecipientName(composer) {
-        const bubble = closestSafe(composer, ".msg-overlay-conversation-bubble");
+        const bubble =
+            closestSafe(composer, ".msg-overlay-conversation-bubble") ||
+            closestSafe(composer, ".msg-form") ||
+            closestSafe(composer, ".msg-thread");
+
         const title =
             bubble?.querySelector(".msg-overlay-bubble-header__title span") ||
-            bubble?.querySelector(".msg-overlay-bubble-header__title");
+            bubble?.querySelector(".msg-overlay-bubble-header__title") ||
+            bubble?.querySelector(".msg-thread__link-to-profile") ||
+            bubble?.querySelector(".msg-entity-lockup__entity-title");
 
-        return (title?.innerText || "").trim() || "linkedin-message-contact";
+        return normalizeText(title?.innerText || "", 200) || "linkedin-message-contact";
     }
 
     function getLatestMessageContext(composer) {
-        const bubble = closestSafe(composer, ".msg-overlay-conversation-bubble");
+        const bubble =
+            closestSafe(composer, ".msg-overlay-conversation-bubble") ||
+            closestSafe(composer, ".msg-form") ||
+            closestSafe(composer, ".msg-thread") ||
+            closestSafe(composer, ".msg-convo-wrapper");
+
         if (!bubble) {
             return {
                 latestMessage: "",
@@ -307,15 +362,29 @@
         }
 
         const messageItems = Array.from(
-            bubble.querySelectorAll(".msg-s-event-listitem")
+            bubble.querySelectorAll(
+                ".msg-s-event-listitem, .msg-s-message-list__event, .msg-s-message-group"
+            )
         );
 
         const visibleMessages = messageItems
             .map((item) => {
                 const sender =
-                    item.querySelector(".msg-s-message-group__name")?.innerText?.trim() || "";
+                    normalizeText(
+                        item.querySelector(".msg-s-message-group__name")?.innerText ||
+                        item.querySelector(".msg-s-message-group__profile-link")?.innerText ||
+                        "",
+                        120
+                    ) || "";
+
                 const body =
-                    item.querySelector(".msg-s-event-listitem__body")?.innerText?.trim() || "";
+                    normalizeText(
+                        item.querySelector(".msg-s-event-listitem__body")?.innerText ||
+                        item.querySelector(".msg-s-message-group__message-bubble")?.innerText ||
+                        item.querySelector("p")?.innerText ||
+                        "",
+                        280
+                    ) || "";
 
                 if (!body) return null;
 
@@ -371,7 +440,7 @@
                 EmotionalTemperature: 0,
                 RecentRelationshipSummary: "",
                 RelevantMemories: [],
-                AllowNoReply: true,
+                AllowNoReply: false,
                 RequestAlternatives: false,
                 InteractionMetadata: {
                     mode: "post",
@@ -393,7 +462,7 @@
                 SourceAuthor: recipient || "",
                 SourceTitle: "LinkedIn message thread",
                 SourceText: messageContext.latestMessage || "",
-                ParentContextText: messageContext.latestMessage || "",
+                ParentContextText: messageContext.nearbyMessages || "",
                 NearbyContextText: messageContext.nearbyMessages || "",
                 LastInteractionDays: 0,
                 TotalInteractions: 0,
@@ -407,7 +476,10 @@
                 RequestAlternatives: false,
                 InteractionMetadata: {
                     mode: "message",
-                    pageTitle: document.title
+                    pageTitle: document.title,
+                    recentMessageCount: messageContext.nearbyMessages
+                        ? String(messageContext.nearbyMessages.split("\n").length)
+                        : "0"
                 }
             };
         }
@@ -416,6 +488,7 @@
             const sourceAuthor = getSourceAuthor(container);
             const sourceTitle = getSourceTitle(container);
             const sourceText = getSourceText(container);
+            const nearbyComments = getNearbyComments(container);
 
             return {
                 ContactId: sourceAuthor || "linkedin-post-contact",
@@ -427,7 +500,7 @@
                 SourceTitle: sourceTitle || "",
                 SourceText: sourceText || "",
                 ParentContextText: sourceText || "",
-                NearbyContextText: "",
+                NearbyContextText: nearbyComments || "",
                 LastInteractionDays: 0,
                 TotalInteractions: 0,
                 ReciprocityScore: 0,
@@ -573,7 +646,15 @@
         }
 
         const payload = createPayload(composer);
-        log("request payload", payload);
+        log("request payload", {
+            surface: payload.Surface,
+            contact: payload.ContactId,
+            sourceAuthor: payload.SourceAuthor,
+            sourceText: payload.SourceText,
+            parentContext: payload.ParentContextText,
+            nearbyContext: payload.NearbyContextText,
+            payload
+        });
 
         button.textContent = "Thinking...";
         button.setAttribute("data-sovereign-busy", "true");
