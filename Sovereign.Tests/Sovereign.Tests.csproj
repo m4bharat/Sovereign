@@ -25,6 +25,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Sovereign.API\Sovereign.API.csproj" />
     <ProjectReference Include="..\Sovereign.Infrastructure\Sovereign.Infrastructure.csproj" />
+    <ProjectReference Include="..\Sovereign.Intelligence\Sovereign.Intelligence.csproj" />
+    <ProjectReference Include="..\Sovereign.Application\Sovereign.Application.csproj" />
+    <ProjectReference Include="..\Sovereign.Domain\Sovereign.Domain.csproj" />
   </ItemGroup>
 
 </Project>

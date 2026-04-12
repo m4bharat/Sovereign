@@ -20,6 +20,7 @@ public sealed class RelationshipTemperatureEndpointTests : IClassFixture<CustomW
     public async Task DecayAlerts_Endpoint_Should_Return_Ok()
     {
         var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "mock-jwt-token");
 
         var createRequest = new CreateRelationshipRequest
         {

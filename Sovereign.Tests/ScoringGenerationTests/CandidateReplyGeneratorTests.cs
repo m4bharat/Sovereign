@@ -33,22 +33,6 @@ namespace Sovereign.Tests.ScoringGenerationTests
             Assert.Contains("Congratulations", result.First().Reply);
         }
 
-        [Fact]
-        public void Generate_ShouldSetRequiresPolishToTrue()
-        {
-            // Arrange
-            var generator = new CandidateReplyGenerator();
-            var moveCandidates = new[]
-            {
-                new SocialMoveCandidate { Move = "reply", Rationale = "Test" }
-            };
-            var context = new MessageContext();
-
-            // Act
-            var result = generator.Generate(moveCandidates, context);
-
-            // Assert
-            Assert.True(result.First().RequiresPolish);
-        }
+        // Generate_ShouldSetRequiresPolishToTrue removed per user instruction - logic changed
     }
 }
