@@ -1,8 +1,9 @@
 using FluentAssertions;
+using Sovereign.Tests.InfrastructureTests;
 using System.Net;
 using Xunit;
 
-namespace Sovereign.API.IntegrationTests;
+namespace Sovereign.Tests.APIEndpointTests;
 
 public sealed class HealthEndpointTests : IClassFixture<CustomWebApplicationFactory>
 {

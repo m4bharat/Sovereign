@@ -1,10 +1,11 @@
 ﻿using FluentAssertions;
+using Sovereign.Tests.InfrastructureTests;
 using Sovereign.Application.DTOs;
 using System.Net;
 using System.Net.Http.Json;
 using Xunit;
 
-namespace Sovereign.API.IntegrationTests;
+namespace Sovereign.Tests.APIEndpointTests;
 
 public sealed class ConversationThreadEndpointsTests : IClassFixture<CustomWebApplicationFactory>
 {

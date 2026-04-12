@@ -4,7 +4,7 @@ using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
 
-namespace Sovereign.Intelligence.Tests;
+namespace Sovereign.Tests.ScoringGenerationTests;
 
 public class WinnerSelectionEngineTests
 {

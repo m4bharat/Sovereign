@@ -15,7 +15,7 @@ using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Services;
 using Microsoft.Extensions.Logging;
 
-namespace Sovereign.Intelligence.Tests
+namespace Sovereign.Tests.DecisionEngineRegressionTests
 {
     public class DecisionV2EvaluationTests
     {
@@ -138,7 +138,7 @@ namespace Sovereign.Intelligence.Tests
                 });
 
             var mockLlmClient = new Mock<ILlmClient>();
-            mockLlmClient.Setup(c => c.CompleteDecisionV2Async(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
+            mockLlmClient.Setup(c => c.CompleteDecisionV2Async(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new DecisionV2Result { Reply = "polished reply", Confidence = 0.9, Rationale = "polished", Alternatives = new List<string>() });
 
             var mockLogger = new Mock<ILogger<DecisionEngineV2>>();
@@ -214,7 +214,7 @@ namespace Sovereign.Intelligence.Tests
                 });
 
             var mockLlmClient = new Mock<ILlmClient>();
-            mockLlmClient.Setup(c => c.CompleteDecisionV2Async(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
+            mockLlmClient.Setup(c => c.CompleteDecisionV2Async(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new DecisionV2Result { Reply = "polished reply", Confidence = 0.9, Rationale = "polished", Alternatives = new List<string>() });
 
             var mockLogger = new Mock<ILogger<DecisionEngineV2>>();
@@ -300,7 +300,7 @@ namespace Sovereign.Intelligence.Tests
                 });
 
             var mockLlmClient = new Mock<ILlmClient>();
-            mockLlmClient.Setup(c => c.CompleteDecisionV2Async(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
+            mockLlmClient.Setup(c => c.CompleteDecisionV2Async(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new DecisionV2Result { Reply = "polished reply", Confidence = 0.9, Rationale = "polished", Alternatives = new List<string>() });
 
             var mockLogger = new Mock<ILogger<DecisionEngineV2>>();

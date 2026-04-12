@@ -1,10 +1,11 @@
 using FluentAssertions;
+using Sovereign.Tests.InfrastructureTests;
 using Sovereign.Application.DTOs;
 using System.Net;
 using System.Net.Http.Json;
 using Xunit;
 
-namespace Sovereign.API.IntegrationTests;
+namespace Sovereign.Tests.APIEndpointTests;
 
 public sealed class RelationshipTemperatureEndpointTests : IClassFixture<CustomWebApplicationFactory>
 {
@@ -24,7 +25,7 @@ public sealed class RelationshipTemperatureEndpointTests : IClassFixture<CustomW
         {
             UserId = "user-001",
             ContactId = "contact-001",
-            Role = Sovereign.Domain.Enums.RelationshipRole.Investor
+            Role = Domain.Enums.RelationshipRole.Investor
         };
 
         var createResponse = await client.PostAsJsonAsync("/api/relationships", createRequest);

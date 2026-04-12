@@ -3,7 +3,7 @@ using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
 
-namespace Sovereign.Intelligence.Tests
+namespace Sovereign.Tests.ScoringGenerationTests
 {
     public class SocialSituationDetectorTests
     {
@@ -42,7 +42,7 @@ namespace Sovereign.Intelligence.Tests
 
             // Assert
             Assert.Equal("cta_or_question", situation.Type);
-            Assert.Contains("input", situation.Summary, System.StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("input", situation.Summary, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
@@ -53,7 +53,7 @@ namespace Sovereign.Intelligence.Tests
             {
                 InteractionMode = "chat",
                 Message = "wish him thank you",
-                InteractionMetadata = new System.Collections.Generic.Dictionary<string, string>
+                InteractionMetadata = new Dictionary<string, string>
                 {
                     ["rewrite_intent"] = "True"
                 }

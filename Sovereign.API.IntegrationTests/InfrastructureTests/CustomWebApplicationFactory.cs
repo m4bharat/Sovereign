@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Sovereign.Infrastructure.Persistence;
 using Sovereign.Intelligence.Clients;
 
-namespace Sovereign.API.IntegrationTests;
+namespace Sovereign.Tests.InfrastructureTests;
 
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {

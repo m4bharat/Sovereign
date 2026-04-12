@@ -15,7 +15,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.API", "Sovereign.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.Intelligence", "Sovereign.Intelligence\Sovereign.Intelligence.csproj", "{5511D77A-925B-A057-D33B-2C2E22469E58}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.API.IntegrationTests", "Sovereign.API.IntegrationTests\Sovereign.API.IntegrationTests.csproj", "{762C9BAD-2D78-4F54-A592-7A782BFC91E4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.Tests", "Sovereign.API.IntegrationTests\Sovereign.Tests.csproj", "{762C9BAD-2D78-4F54-A592-7A782BFC91E4}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Sovereign.Extension", "Sovereign.Extension", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
@@ -25,8 +25,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Sovereign.Extension", "Sove
 		Sovereign.Extension\popup.html = Sovereign.Extension\popup.html
 		Sovereign.Extension\popup.js = Sovereign.Extension\popup.js
 	EndProjectSection
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.Intelligence.Tests", "Sovereign.Intelligence.Tests\Sovereign.Intelligence.Tests.csproj", "{F2A77623-6275-71A8-D445-A265826DCE47}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -58,10 +56,6 @@ Global
 		{762C9BAD-2D78-4F54-A592-7A782BFC91E4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{762C9BAD-2D78-4F54-A592-7A782BFC91E4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{762C9BAD-2D78-4F54-A592-7A782BFC91E4}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F2A77623-6275-71A8-D445-A265826DCE47}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F2A77623-6275-71A8-D445-A265826DCE47}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F2A77623-6275-71A8-D445-A265826DCE47}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F2A77623-6275-71A8-D445-A265826DCE47}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

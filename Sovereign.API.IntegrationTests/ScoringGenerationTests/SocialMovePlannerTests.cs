@@ -2,7 +2,7 @@ using Xunit;
 using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
 
-namespace Sovereign.Intelligence.Tests
+namespace Sovereign.Tests.ScoringGenerationTests
 {
     public class SocialMovePlannerTests
     {
