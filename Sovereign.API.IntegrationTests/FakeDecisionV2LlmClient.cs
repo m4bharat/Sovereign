@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.DecisionV2;
 
-namespace Sovereign.Intelligence.Tests;
+namespace Sovereign.API.IntegrationTests;
 
 public sealed class FakeDecisionV2LlmClient : ILlmClient
 {

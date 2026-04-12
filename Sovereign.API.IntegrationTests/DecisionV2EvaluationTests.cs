@@ -15,7 +15,7 @@ using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Services;
 using Microsoft.Extensions.Logging;
 
-namespace Sovereign.Intelligence.Tests
+namespace Sovereign.API.IntegrationTests
 {
     public class DecisionV2EvaluationTests
     {
