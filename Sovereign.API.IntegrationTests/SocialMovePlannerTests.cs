@@ -2,7 +2,7 @@ using Xunit;
 using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
 
-namespace Sovereign.API.IntegrationTests
+namespace Sovereign.Intelligence.Tests
 {
     public class SocialMovePlannerTests
     {

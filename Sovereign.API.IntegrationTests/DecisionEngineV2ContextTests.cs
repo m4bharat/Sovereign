@@ -12,7 +12,7 @@ using Sovereign.Intelligence.Models;
 using Sovereign.Intelligence.Services;
 using Xunit;
 
-namespace Sovereign.API.IntegrationTests;
+namespace Sovereign.Intelligence.Tests;
 
 public sealed class DecisionEngineV2ContextTests
 {

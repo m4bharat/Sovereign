@@ -11,9 +11,9 @@ using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Evaluation;
-using Sovereign.API.IntegrationTests;
+using Sovereign.Intelligence.Tests;
 
-namespace Sovereign.API.IntegrationTests;
+namespace Sovereign.Intelligence.Tests;
 
 public class DecisionV2AcceptanceTests
 {

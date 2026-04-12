@@ -5,7 +5,7 @@ using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Models;
 using Sovereign.Intelligence.Services;
 
-namespace Sovereign.API.IntegrationTests;
+namespace Sovereign.Intelligence.Tests;
 
 public class InsightDepthScoringTests
 {
