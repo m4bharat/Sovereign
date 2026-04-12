@@ -15,7 +15,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.API", "Sovereign.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.Intelligence", "Sovereign.Intelligence\Sovereign.Intelligence.csproj", "{5511D77A-925B-A057-D33B-2C2E22469E58}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.Tests", "Sovereign.API.IntegrationTests\Sovereign.Tests.csproj", "{762C9BAD-2D78-4F54-A592-7A782BFC91E4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sovereign.Tests", "Sovereign.Tests\Sovereign.Tests.csproj", "{762C9BAD-2D78-4F54-A592-7A782BFC91E4}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Sovereign.Extension", "Sovereign.Extension", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
