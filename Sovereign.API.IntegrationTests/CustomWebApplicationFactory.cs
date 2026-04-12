@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Sovereign.Infrastructure.Persistence;
 using Sovereign.Intelligence.Clients;
-using Sovereign.Intelligence.Tests;
 
 namespace Sovereign.API.IntegrationTests;
 
