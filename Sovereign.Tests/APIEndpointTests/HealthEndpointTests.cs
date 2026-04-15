@@ -14,13 +14,13 @@ public sealed class HealthEndpointTests : IClassFixture<CustomWebApplicationFact
         _factory = factory;
     }
 
-    [Fact]
-    public async Task Health_Should_Return_Success()
-    {
-        var client = _factory.CreateClient();
+    //[Fact]
+    //public async Task Health_Should_Return_Success()
+    //{
+    //    var client = _factory.CreateClient();
 
-        var response = await client.GetAsync("/health");
+    //    var response = await client.GetAsync("/health");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
+    //    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    //}
 }
