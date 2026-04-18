@@ -3,6 +3,8 @@
     const BUTTON_CLASS = "sovereign-linkedin-button";
     const STATUS_CLASS = "sovereign-linkedin-status";
     const SLOT_CLASS = "sovereign-action-slot";
+    const AUTH_KEY = "sovereignAuthToken";
+    const PENDING_KEY = "sovereignPendingSuggestion";
 
     let scanTimer = null;
     let observerStarted = false;
@@ -638,14 +640,51 @@
         }
     }
 
-    function handleSuggestClick(composer, button, slot) {
-        const message = getComposerText(composer);
-        if (!message) {
-            setStatus(slot, "Write something first.", "error");
-            return;
-        }
+    async function getAuthToken() {
+        const result = await chrome.storage.local.get([AUTH_KEY]);
+        return result?.[AUTH_KEY] || "";
+    }
 
-        const payload = createPayload(composer);
+    async function setPendingSuggestion(pending) {
+        await chrome.storage.local.set({ [PENDING_KEY]: pending });
+    }
+
+    async function getPendingSuggestion() {
+        const result = await chrome.storage.local.get([PENDING_KEY]);
+        return result?.[PENDING_KEY] || null;
+    }
+
+    async function clearPendingSuggestion() {
+        await chrome.storage.local.remove([PENDING_KEY]);
+    }
+
+    function openAuthPage() {
+        chrome.runtime.sendMessage({ type: "SOVEREIGN_OPEN_AUTH" }, (res) => {
+            if (chrome.runtime.lastError) {
+                console.error("[Sovereign] auth open failed:", chrome.runtime.lastError.message);
+                return;
+            }
+
+            console.log("[Sovereign] auth open response:", res);
+        });
+    }
+
+    async function ensureAuthenticated(payload, slot) {
+        const token = await getAuthToken();
+        if (token) return token;
+
+        await setPendingSuggestion({
+            payload,
+            currentUrl: window.location.href,
+            createdAt: Date.now()
+        });
+
+        setStatus(slot, "Please log in to Sovereign first.", "info");
+        openAuthPage();
+        return "";
+    }
+
+    function callDecide(payload, button, slot, composer) {
         log("request payload", {
             surface: payload.Surface,
             contact: payload.ContactId,
@@ -696,6 +735,41 @@
         });
     }
 
+    async function handleSuggestClick(composer, button, slot) {
+        const message = getComposerText(composer);
+        if (!message) {
+            setStatus(slot, "Write something first.", "error");
+            return;
+        }
+
+        const payload = createPayload(composer);
+        const token = await ensureAuthenticated(payload, slot);
+        if (!token) return;
+
+        callDecide(payload, button, slot, composer);
+    }
+
+    async function tryResumePendingSuggestion(composer) {
+        if (!composer) return;
+        const token = await getAuthToken();
+        if (!token) return;
+
+        const pending = await getPendingSuggestion();
+        if (!pending?.payload) return;
+        if (pending.currentUrl && pending.currentUrl !== window.location.href) return;
+
+        const { surface } = detectSurface(composer);
+        if (surface !== pending.payload.Surface) return;
+
+        const host = getInjectionHost(composer);
+        const slot = getOrCreateActionSlot(host, surface);
+        if (!slot) return;
+
+        const button = slot.querySelector(`.${BUTTON_CLASS}`) || document.createElement("button");
+        await clearPendingSuggestion();
+        callDecide(pending.payload, button, slot, composer);
+    }
+
     function injectButton(composer) {
         if (!composer || !isVisible(composer)) return;
 
@@ -719,12 +793,14 @@
             button.addEventListener("click", (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                handleSuggestClick(composer, button, slot);
+                void handleSuggestClick(composer, button, slot);
             });
 
             slot.prepend(button);
             getOrCreateStatus(slot);
         }
+
+        void tryResumePendingSuggestion(composer);
     }
 
     function findCandidateEditorsByQuery() {
