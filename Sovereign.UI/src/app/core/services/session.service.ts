@@ -39,6 +39,20 @@ export class SessionService {
     void this.clearExtensionStorage();
   }
 
+  async continueToLinkedInAndResume(): Promise<void> {
+    const chromeApi = (window as Window & { chrome?: any }).chrome;
+
+    if (chromeApi?.runtime?.sendMessage) {
+      await new Promise<void>((resolve) => {
+        chromeApi.runtime.sendMessage({ type: 'SOVEREIGN_AUTH_COMPLETED' }, () => resolve());
+      });
+      window.close();
+      return;
+    }
+
+    window.location.href = 'https://www.linkedin.com/feed/';
+  }
+
   private async syncToExtensionStorage(): Promise<void> {
     const chromeApi = (window as Window & { chrome?: any }).chrome;
     const storage = chromeApi?.storage?.local;
@@ -48,15 +62,12 @@ export class SessionService {
     await new Promise<void>((resolve) => {
       storage.set(
         {
-          // current keys
           sovereignAuthToken: this.token(),
+          sovereignToken: this.token(),
           sovereignUserId: this.userId(),
           sovereignEmail: this.email(),
           sovereignTenantId: this.tenantId(),
-          sovereignIsAuthenticated: this.isAuthenticated(),
-
-          // legacy compatibility key for older background code
-          sovereignToken: this.token()
+          sovereignIsAuthenticated: this.isAuthenticated()
         },
         () => resolve()
       );

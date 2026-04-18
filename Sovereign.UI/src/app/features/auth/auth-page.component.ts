@@ -1,132 +1,262 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthApiService } from '../../core/services/auth-api.service';
 import { SessionService } from '../../core/services/session.service';
+import { firstValueFrom } from 'rxjs';
 
 @Component({
+  selector: 'app-auth-page',
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="auth-page">
-      <div class="card">
-        <h1>Sovereign</h1>
-        <p class="subtext">Sign in to use Suggest with Sovereign.</p>
+    <section class="auth-page">
+      <div class="auth-card">
+        <h1>Sign in to use Suggest with Sovereign.</h1>
 
-        <label>
-          <span>Email</span>
-          <input [ngModel]="email()" (ngModelChange)="email.set($event)" type="email" autocomplete="email" />
-        </label>
+        <ng-container *ngIf="!session.isAuthenticated(); else signedInBlock">
+          <label class="field">
+            <span>Email</span>
+            <input
+              type="email"
+              [(ngModel)]="email"
+              placeholder="founder@sovereign.ai"
+              autocomplete="email"
+            />
+          </label>
 
-        <label>
-          <span>Password</span>
-          <input [ngModel]="password()" (ngModelChange)="password.set($event)" type="password" autocomplete="current-password" />
-        </label>
+          <label class="field">
+            <span>Password</span>
+            <input
+              type="password"
+              [(ngModel)]="password"
+              placeholder="••••••••••"
+              autocomplete="current-password"
+            />
+          </label>
 
-        <label>
-          <span>Tenant</span>
-          <input [ngModel]="tenantId()" (ngModelChange)="tenantId.set($event)" type="text" />
-        </label>
+          <label class="field">
+            <span>Tenant</span>
+            <input
+              type="text"
+              [(ngModel)]="tenantId"
+              placeholder="sovereign-dev"
+              autocomplete="organization"
+            />
+          </label>
 
-        <div class="actions">
-          <button type="button" [disabled]="loading()" (click)="login()">{{ loading() ? 'Please wait…' : 'Login' }}</button>
-          <button type="button" class="secondary" [disabled]="loading()" (click)="register()">Register</button>
-        </div>
-
-        <p class="message" *ngIf="message()">{{ message() }}</p>
-
-        <div class="session" *ngIf="session.isAuthenticated()">
-          <p><strong>Signed in as:</strong> {{ session.email() }}</p>
-          <p><strong>Tenant:</strong> {{ session.tenantId() }}</p>
           <div class="actions">
-            <button type="button" (click)="continueToDashboard()">Continue</button>
-            <button type="button" class="secondary" (click)="logout()">Logout</button>
+            <button type="button" (click)="onLogin()" [disabled]="busy()">
+              {{ busy() ? 'Working...' : 'Login' }}
+            </button>
+
+            <button type="button" (click)="onRegister()" [disabled]="busy()">
+              {{ busy() ? 'Working...' : 'Register' }}
+            </button>
           </div>
-        </div>
+
+          <p class="status error" *ngIf="error()">{{ error() }}</p>
+          <p class="status success" *ngIf="success()">{{ success() }}</p>
+        </ng-container>
+
+        <ng-template #signedInBlock>
+          <div class="signed-in-block">
+            <p><strong>Signed in as:</strong> {{ session.email() }}</p>
+            <p><strong>Tenant:</strong> {{ session.tenantId() }}</p>
+
+            <div class="actions">
+              <button type="button" (click)="onContinue()" [disabled]="busy()">
+                Continue
+              </button>
+
+              <button type="button" (click)="onLogout()" [disabled]="busy()">
+                Logout
+              </button>
+            </div>
+
+            <p class="status error" *ngIf="error()">{{ error() }}</p>
+            <p class="status success" *ngIf="success()">{{ success() }}</p>
+          </div>
+        </ng-template>
       </div>
-    </div>
+    </section>
   `,
-  styles: [
-    `
-      .auth-page { min-height: 100vh; display: grid; place-items: center; background: #f4f7fb; padding: 24px; }
-      .card { width: 100%; max-width: 420px; background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
-      h1 { margin: 0 0 8px; font-size: 28px; }
-      .subtext { margin: 0 0 20px; color: #516074; }
-      label { display: grid; gap: 6px; margin-bottom: 14px; }
-      span { font-size: 13px; font-weight: 600; color: #253243; }
-      input { border: 1px solid #d6deea; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
-      .actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
-      button { border: none; border-radius: 999px; padding: 10px 16px; font-weight: 700; cursor: pointer; background: #0a66c2; color: #fff; }
-      button.secondary { background: #e8eef7; color: #1f2e43; }
-      button:disabled { opacity: 0.72; cursor: wait; }
-      .message { margin-top: 14px; color: #1f2e43; }
-      .session { margin-top: 18px; border-top: 1px solid #eef2f7; padding-top: 16px; }
-      .session p { margin: 6px 0; }
-    `
-  ]
+  styles: [`
+    .auth-page {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: #f6f8fb;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 420px;
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+
+    h1 {
+      font-size: 20px;
+      line-height: 1.3;
+      margin: 0 0 20px;
+    }
+
+    .field {
+      display: block;
+      margin-bottom: 14px;
+    }
+
+    .field span {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #334155;
+    }
+
+    .field input {
+      width: 100%;
+      border: 1px solid #d0d7e2;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: #0a66c2;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button[disabled] {
+      opacity: 0.7;
+      cursor: wait;
+    }
+
+    .status {
+      margin-top: 14px;
+      font-size: 13px;
+    }
+
+    .status.error {
+      color: #b00020;
+    }
+
+    .status.success {
+      color: #1a7f37;
+    }
+
+    .signed-in-block p {
+      margin: 8px 0;
+    }
+  `]
 })
 export class AuthPageComponent {
-  private readonly api = inject(AuthApiService);
-  private readonly router = inject(Router);
+  private readonly authApi = inject(AuthApiService);
   readonly session = inject(SessionService);
+  private readonly router = inject(Router);
 
-  readonly email = signal('founder@sovereign.ai');
-  readonly password = signal('ChangeMe123!');
-  readonly tenantId = signal('sovereign-dev');
-  readonly message = signal('');
-  readonly loading = signal(false);
+  email = 'founder@sovereign.ai';
+  password = '';
+  tenantId = 'sovereign-dev';
 
-  register(): void {
-    this.loading.set(true);
-    this.message.set('');
+  readonly busy = signal(false);
+  readonly error = signal('');
+  readonly success = signal('');
 
-    this.api.register({
-      email: this.email(),
-      password: this.password(),
-      tenantId: this.tenantId()
-    }).subscribe({
-      next: response => {
-        this.session.apply(response);
-        this.message.set('Registered and signed in.');
-        this.loading.set(false);
-        void this.router.navigateByUrl('/dashboard');
-      },
-      error: error => {
-        this.message.set(error?.error?.message || 'Registration failed.');
-        this.loading.set(false);
-      }
-    });
+  async onLogin(): Promise<void> {
+    this.error.set('');
+    this.success.set('');
+
+    if (!this.email.trim() || !this.password.trim() || !this.tenantId.trim()) {
+      this.error.set('Email, password, and tenant are required.');
+      return;
+    }
+
+    this.busy.set(true);
+
+    try {
+            const response = await firstValueFrom(
+              this.authApi.login({
+                email: this.email.trim(),
+                password: this.password.trim(),
+                tenantId: this.tenantId.trim()
+              })
+            );
+
+      this.session.apply(response);
+      this.success.set('Login successful. You can continue back to LinkedIn.');
+    } catch (err: any) {
+      this.error.set(err?.message || 'Login failed.');
+    } finally {
+      this.busy.set(false);
+    }
   }
 
-  login(): void {
-    this.loading.set(true);
-    this.message.set('');
+  async onRegister(): Promise<void> {
+    this.error.set('');
+    this.success.set('');
 
-    this.api.login({
-      email: this.email(),
-      password: this.password(),
-      tenantId: this.tenantId()
-    }).subscribe({
-      next: response => {
-        this.session.apply(response);
-        this.message.set('Logged in successfully.');
-        this.loading.set(false);
-        void this.router.navigateByUrl('/dashboard');
-      },
-      error: error => {
-        this.message.set(error?.error?.message || 'Login failed.');
-        this.loading.set(false);
-      }
-    });
+    if (!this.email.trim() || !this.password.trim() || !this.tenantId.trim()) {
+      this.error.set('Email, password, and tenant are required.');
+      return;
+    }
+
+    this.busy.set(true);
+
+    try {
+      const response = await firstValueFrom(
+            this.authApi.register({
+              email: this.email.trim(),
+              password: this.password.trim(),
+              tenantId: this.tenantId.trim()
+            })
+          );
+
+      this.session.apply(response);
+      this.success.set('Registration successful. You can continue back to LinkedIn.');
+    } catch (err: any) {
+      this.error.set(err?.message || 'Registration failed.');
+    } finally {
+      this.busy.set(false);
+    }
   }
 
-  logout(): void {
+  async onContinue(): Promise<void> {
+    this.error.set('');
+    this.success.set('');
+
+    this.busy.set(true);
+
+    try {
+      await this.session.continueToLinkedInAndResume();
+    } catch (err: any) {
+      this.error.set(err?.message || 'Could not return to LinkedIn.');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  onLogout(): void {
     this.session.clear();
-    this.message.set('Signed out.');
-  }
-
-  continueToDashboard(): void {
-    void this.router.navigateByUrl('/dashboard');
+    this.success.set('');
+    this.error.set('');
   }
 }
