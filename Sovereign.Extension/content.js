@@ -751,12 +751,12 @@
 
     async function tryResumePendingSuggestion(composer) {
         if (!composer) return;
+
         const token = await getAuthToken();
         if (!token) return;
 
         const pending = await getPendingSuggestion();
         if (!pending?.payload) return;
-        if (pending.currentUrl && pending.currentUrl !== window.location.href) return;
 
         const { surface } = detectSurface(composer);
         if (surface !== pending.payload.Surface) return;
@@ -765,7 +765,16 @@
         const slot = getOrCreateActionSlot(host, surface);
         if (!slot) return;
 
-        const button = slot.querySelector(`.${BUTTON_CLASS}`) || document.createElement("button");
+        let button = slot.querySelector(`.${BUTTON_CLASS}`);
+        if (!button) {
+            button = document.createElement("button");
+            button.className = BUTTON_CLASS;
+            button.type = "button";
+            button.textContent = "Suggest with Sovereign";
+            slot.prepend(button);
+        }
+
+        setStatus(slot, "Resuming your saved suggestion...", "info");
         await clearPendingSuggestion();
         callDecide(pending.payload, button, slot, composer);
     }

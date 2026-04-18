@@ -66,6 +66,19 @@ function extractErrorMessage(status, data, rawText) {
     return `HTTP ${status}`;
 }
 
+async function focusBestLinkedInTab() {
+    const tabs = await chrome.tabs.query({ url: "https://www.linkedin.com/*" });
+    if (!tabs.length) return;
+
+    const activeLinkedInTab = tabs.find((t) => t.active) || tabs[0];
+    if (activeLinkedInTab.windowId != null) {
+        await chrome.windows.update(activeLinkedInTab.windowId, { focused: true });
+    }
+    if (activeLinkedInTab.id != null) {
+        await chrome.tabs.update(activeLinkedInTab.id, { active: true });
+    }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message) {
         return false;
@@ -100,6 +113,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .catch((error) => {
                 sendResponse({ ok: false, error: error?.message || String(error) });
             });
+        return true;
+    }
+
+    if (message.type === "SOVEREIGN_AUTH_COMPLETED") {
+        focusBestLinkedInTab()
+            .then(() => sendResponse({ ok: true }))
+            .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
         return true;
     }
 
