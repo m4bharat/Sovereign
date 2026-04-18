@@ -20,6 +20,8 @@ export class SessionService {
     this.email.set(login.email);
     this.tenantId.set(login.tenantId);
     this.isAuthenticated.set(true);
+
+    void this.syncToExtensionStorage();
   }
 
   clear(): void {
@@ -27,10 +29,58 @@ export class SessionService {
     localStorage.removeItem('sovereign.userId');
     localStorage.removeItem('sovereign.email');
     localStorage.removeItem('sovereign.tenantId');
+
     this.token.set('');
     this.userId.set('');
     this.email.set('');
     this.tenantId.set('');
     this.isAuthenticated.set(false);
+
+    void this.clearExtensionStorage();
+  }
+
+  private async syncToExtensionStorage(): Promise<void> {
+    const chromeApi = (window as Window & { chrome?: any }).chrome;
+    const storage = chromeApi?.storage?.local;
+
+    if (!storage?.set) return;
+
+    await new Promise<void>((resolve) => {
+      storage.set(
+        {
+          // current keys
+          sovereignAuthToken: this.token(),
+          sovereignUserId: this.userId(),
+          sovereignEmail: this.email(),
+          sovereignTenantId: this.tenantId(),
+          sovereignIsAuthenticated: this.isAuthenticated(),
+
+          // legacy compatibility key for older background code
+          sovereignToken: this.token()
+        },
+        () => resolve()
+      );
+    });
+  }
+
+  private async clearExtensionStorage(): Promise<void> {
+    const chromeApi = (window as Window & { chrome?: any }).chrome;
+    const storage = chromeApi?.storage?.local;
+
+    if (!storage?.remove) return;
+
+    await new Promise<void>((resolve) => {
+      storage.remove(
+        [
+          'sovereignAuthToken',
+          'sovereignToken',
+          'sovereignUserId',
+          'sovereignEmail',
+          'sovereignTenantId',
+          'sovereignIsAuthenticated'
+        ],
+        () => resolve()
+      );
+    });
   }
 }
