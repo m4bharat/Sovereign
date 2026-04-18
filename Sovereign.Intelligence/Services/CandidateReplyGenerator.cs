@@ -14,11 +14,13 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         var normalizedMessage = (context.Message ?? string.Empty).Trim();
         var hasUserDraft = !string.IsNullOrWhiteSpace(normalizedMessage);
         var sourceText = (context.SourceText ?? string.Empty).Trim();
+        var situationType = (context.SituationType ?? string.Empty).Trim();
 
         return moveCandidates
             .Select(move =>
             {
                 var reply = GenerateReplyForMove(move.Move, context, normalizedMessage, sourceText);
+
                 // ===== GENERATION QUALITY FILTER =====
                 if (!string.Equals(move.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
                 {
@@ -29,22 +31,16 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
                     {
                         reply = string.Empty;
                     }
-
-                    // prevent generic-only responses
-                    var lower = trimmed.ToLowerInvariant();
-
-                    var genericOnly =
-                        lower.StartsWith("great") ||
-                        lower.StartsWith("nice") ||
-                        lower.StartsWith("well said") ||
-                        lower.StartsWith("interesting");
-
-                    if (genericOnly && trimmed.Length < 35)
+                    else if (IsGenericReply(trimmed) && trimmed.Length < 60)
                     {
-                        reply = string.Empty;
+                        reply = BuildFallbackReply(move.Move, context, situationType);
                     }
                 }
+
                 var shortReply = BuildShortReplyForMove(move.Move, context, normalizedMessage, sourceText);
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Sovereign][Generator] Move={move.Move}, Situation={situationType}, Surface={context.Surface}, Reply={reply}");
 
                 return new SocialMoveCandidate
                 {
@@ -244,7 +240,6 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
             return string.Empty;
 
         var cleanDraft = RewriteStandaloneSentence(draft);
-        // Ensure weak drafts become meaningful
         if (cleanDraft.Length < 25)
         {
             cleanDraft = $"{cleanDraft} — this highlights a broader shift in how these systems are actually being deployed and scaled.";
@@ -321,7 +316,7 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         if (string.IsNullOrWhiteSpace(sourceText))
             return "Curious — where do you see this heading next?";
 
-        return "Interesting direction — where do you see the biggest real-world impact showing up first?";
+        return "Where do you see the biggest real-world impact showing up first?";
     }
 
     private static string GenerateHelpfulReply(string draft, string sourceText)
@@ -394,9 +389,104 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
 
     private static string GenerateFallbackReply(string sourceText)
     {
-        return string.IsNullOrWhiteSpace(sourceText)
-            ? "Thoughtful perspective."
-            : "Thoughtful perspective — especially in how this plays out at scale.";
+        if (string.IsNullOrWhiteSpace(sourceText))
+            return "Appreciate you sharing this.";
+
+        var lower = sourceText.ToLowerInvariant();
+
+        if (lower.Contains("award") ||
+            lower.Contains("recognition") ||
+            lower.Contains("milestone") ||
+            lower.Contains("employee of the quarter") ||
+            lower.Contains("congratulations"))
+        {
+            return "Congratulations on this well-deserved recognition.";
+        }
+
+        if (lower.Contains("?"))
+        {
+            return "Interesting question — there’s a lot in how this plays out in practice.";
+        }
+
+        return "Appreciate you sharing this.";
+    }
+
+    private static string BuildFallbackReply(
+        string move,
+        MessageContext context,
+        string situationType)
+    {
+        var author = context.SourceAuthor?.Trim();
+        var sourceText = context.SourceText ?? string.Empty;
+        var lower = sourceText.ToLowerInvariant();
+
+        if (string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(situationType, "direct_message", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(situationType, "rewrite_direct_message", StringComparison.OrdinalIgnoreCase))
+        {
+            if (lower.Contains("birthday"))
+            {
+                return string.IsNullOrWhiteSpace(author)
+                    ? "Thanks so much for the birthday wishes! I really appreciate it."
+                    : $"Thanks so much for the birthday wishes, {author}! I really appreciate it.";
+            }
+
+            return string.IsNullOrWhiteSpace(author)
+                ? "Thanks so much — I really appreciate it."
+                : $"Thanks so much, {author} — I really appreciate it.";
+        }
+
+        if (string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase))
+        {
+            if (lower.Contains("award") ||
+                lower.Contains("recognition") ||
+                lower.Contains("employee of the quarter") ||
+                lower.Contains("milestone") ||
+                lower.Contains("congratulations"))
+            {
+                return "Congratulations on this well-deserved recognition.";
+            }
+
+            if (lower.Contains("?"))
+            {
+                return "Really interesting question — I think a lot depends on how this plays out in practice.";
+            }
+
+            return "Appreciate you sharing this.";
+        }
+
+        return move switch
+        {
+            "congratulate" => "Congratulations on this well-deserved milestone.",
+            "congratulate_encourage" => "Congratulations on this milestone. Wishing you continued success ahead.",
+            "appreciate_journey" => "The journey behind this really comes through clearly.",
+            "express_interest" => "This looks genuinely interesting. I'd love to learn more.",
+            "answer_supportively" => "That's a thoughtful question. A lot depends on how it plays out in practice.",
+            "ask_relevant_question" => "What has been the biggest learning from this so far?",
+            _ => "Appreciate you sharing this."
+        };
+    }
+
+    private static bool IsGenericReply(string reply)
+    {
+        var text = reply.Trim().ToLowerInvariant();
+
+        var genericPhrases = new[]
+        {
+            "great post",
+            "well said",
+            "thanks for sharing",
+            "interesting perspective",
+            "nice breakdown",
+            "good point",
+            "so true",
+            "very insightful",
+            "thoughtful perspective",
+            "interesting direction",
+            "clear and useful framing"
+        };
+
+        return genericPhrases.Any(text.Contains);
     }
 
     private static bool ShouldPolish(string reply)
