@@ -8,66 +8,55 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
 {
     public WinnerSelectionResult SelectBest(IReadOnlyList<CandidateScore> scoredCandidates, MessageContext context)
     {
-        var filtered = scoredCandidates
-            .Where(score => score.HallucinationPenalty < 0.35)
-            .Where(score => score.Tone >= 0.20)
-            .Where(score => score.Total >= 0.45)
-            .Where(score => !IsLowQualityQuestion(score))
-            .Where(score => !IsDisqualifiedForCtaPost(score.Candidate, context, score))
-            .Where(score => !IsCtaEngagementPost(context) || MeetsCtaThresholds(score))
-            .OrderByDescending(score => score.Total)
-            .ThenByDescending(score => score.PositioningStrength)
-            .ThenByDescending(score => score.CTAResponseQuality)
-            .ThenByDescending(score => score.InsightDepth)
-            .ThenBy(score => score.ParticipationWithoutPositionPenalty)
-            .ThenByDescending(score => score.RiskAdjustedValue)
-            .ThenByDescending(score => score.Specificity)
-            .ThenBy(score => score.GenericPraisePenalty)
-            .ThenBy(score => score.HallucinationPenalty)
-            .ToArray();
+        var situationType = (context.SituationType ?? "").ToLowerInvariant();
 
-        if (filtered.Length == 0)
+        // ===== FAMILY-PRE-FILTER (task: family first) =====
+        var preferredFamilies = GetPreferredFamilies(situationType);
+        var familyCandidates = scoredCandidates.Where(s => preferredFamilies.Contains(s.Candidate.Move.ToLowerInvariant()));
+
+        if (familyCandidates.Any())
+        {
+            // Within family, best score
+            var familyBest = familyCandidates.OrderByDescending(s => s.ComputedTotal).First().Candidate;
+            return new WinnerSelectionResult
+            {
+                Winner = familyBest,
+                Alternatives = scoredCandidates
+                    .Where(s => s.Candidate.Move != familyBest.Move)
+                    .OrderByDescending(s => s.ComputedTotal)
+                    .Take(2)
+                    .Select(s => s.Candidate)
+                    .ToArray()
+            };
+        }
+
+        // Fallback: highest total passing gates
+        var viable = scoredCandidates.Where(s => s.ComputedTotal > 0.0).OrderByDescending(s => s.ComputedTotal).ToArray();
+
+        if (viable.Length == 0)
         {
             return new WinnerSelectionResult
             {
-                Winner = new SocialMoveCandidate
-                {
-                    Move = "no_reply",
-                    Rationale = "No candidate met the minimum threshold for replying."
-                },
+                Winner = new SocialMoveCandidate { Move = "no_reply", Rationale = "No viable candidates" },
                 Alternatives = Array.Empty<SocialMoveCandidate>()
             };
         }
 
-        var winner = filtered[0].Candidate;
+        var winner = viable[0].Candidate;
+        var alternatives = viable.Skip(1).Take(2).Select(s => s.Candidate).ToArray();
 
-        var hasDraft = !string.IsNullOrWhiteSpace(context.Message);
-        var isFeedReply = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
-        var isCompose = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
+        return new WinnerSelectionResult { Winner = winner, Alternatives = alternatives };
+    }
 
-        if (string.Equals(winner.Move, "no_reply", StringComparison.OrdinalIgnoreCase) &&
-            hasDraft &&
-            (isFeedReply || isCompose))
+    private static string[] GetPreferredFamilies(string situationType)
+    {
+        return situationType switch
         {
-            var fallback = filtered
-                .FirstOrDefault(c => !string.Equals(c.Candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase));
-
-            if (fallback != null)
-            {
-                winner = fallback.Candidate;
-            }
-        }
-
-        var alternatives = filtered
-            .Where(score => !ReferenceEquals(score.Candidate, winner))
-            .Select(score => score.Candidate)
-            .Take(2)
-            .ToArray();
-
-        return new WinnerSelectionResult
-        {
-            Winner = winner,
-            Alternatives = alternatives
+            "achievement_share" => new[] { "praise" },
+            "personal_update" => new[] { "congratulate" },
+            "cta_engagement" => new[] { "answer_supportively" },
+            "defer_no_reply" or "controversial_no_reply" => new[] { "no_reply" },
+            _ => new[] { "appreciate" }
         };
     }
 
