@@ -5,6 +5,7 @@
     const SLOT_CLASS = "sovereign-action-slot";
     const AUTH_KEY = "sovereignAuthToken";
     const PENDING_KEY = "sovereignPendingSuggestion";
+    const STYLE_ID = "sovereign-inline-styles";
 
     let scanTimer = null;
     let observerStarted = false;
@@ -30,56 +31,62 @@
     }
 
     function ensureStyles() {
-        if (document.getElementById("sovereign-inline-styles")) return;
+        if (document.getElementById(STYLE_ID)) return;
 
         const style = document.createElement("style");
-        style.id = "sovereign-inline-styles";
+        style.id = STYLE_ID;
         style.textContent = `
             .${SLOT_CLASS} {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                margin: 8px 0;
-                padding: 4px 0;
-                flex-wrap: wrap;
-                position: relative;
-                z-index: 999999;
+                display: flex !important;
+                align-items: center !important;
+                gap: 8px !important;
+                margin: 8px 0 !important;
+                padding: 4px 0 !important;
+                flex-wrap: wrap !important;
+                position: relative !important;
+                z-index: 999999 !important;
             }
 
             .${BUTTON_CLASS} {
-                background: #0a66c2;
-                color: #fff;
-                border: none;
-                border-radius: 999px;
-                padding: 6px 12px;
-                cursor: pointer;
-                font-weight: 600;
-                font-size: 12px;
-                line-height: 1.2;
-                white-space: nowrap;
-                margin: 0;
-                z-index: 999999;
+                background: #0a66c2 !important;
+                color: #fff !important;
+                border: none !important;
+                border-radius: 999px !important;
+                padding: 6px 12px !important;
+                cursor: pointer !important;
+                font-weight: 600 !important;
+                font-size: 12px !important;
+                line-height: 1.2 !important;
+                white-space: nowrap !important;
+                margin: 0 !important;
+                z-index: 999999 !important;
+                box-shadow: none !important;
+                appearance: none !important;
+            }
+
+            .${BUTTON_CLASS}:hover {
+                background: #004182 !important;
             }
 
             .${BUTTON_CLASS}[data-sovereign-busy="true"] {
-                opacity: 0.72;
-                cursor: wait;
+                opacity: 0.72 !important;
+                cursor: wait !important;
             }
 
             .${STATUS_CLASS} {
-                font-size: 12px;
-                line-height: 1.3;
-                color: #666;
-                max-width: 420px;
-                word-break: break-word;
+                font-size: 12px !important;
+                line-height: 1.3 !important;
+                color: #666 !important;
+                max-width: 420px !important;
+                word-break: break-word !important;
             }
 
             .${STATUS_CLASS}[data-type="error"] {
-                color: #b00020;
+                color: #b00020 !important;
             }
 
             .${STATUS_CLASS}[data-type="success"] {
-                color: #1a7f37;
+                color: #1a7f37 !important;
             }
         `;
         document.head.appendChild(style);
@@ -146,7 +153,11 @@
     function detectSurface(composer) {
         if (!composer) return { surface: "unknown", container: null };
 
-        const shareBox = closestSafe(composer, ".share-box");
+        const shareBox =
+            closestSafe(composer, ".share-box") ||
+            closestSafe(composer, ".share-box-feed-entry__trigger") ||
+            closestSafe(composer, ".share-creation-state");
+
         if (shareBox) {
             return { surface: "start_post", container: shareBox };
         }
@@ -183,7 +194,9 @@
             return (
                 container?.querySelector(".share-creation-state__footer") ||
                 container?.querySelector(".share-creation-state__additional-toolbar") ||
+                container?.querySelector(".share-actions") ||
                 container?.querySelector(".share-creation-state") ||
+                composer.parentElement ||
                 container
             );
         }
@@ -193,12 +206,19 @@
             return (
                 msgForm?.querySelector(".msg-form__footer") ||
                 msgForm?.querySelector(".msg-form__msg-content-container") ||
+                msgForm?.querySelector(".msg-form__contenteditable-container") ||
+                composer.parentElement ||
                 msgForm
             );
         }
 
         if (surface === "feed_reply") {
-            return composer.parentElement || container;
+            return (
+                closestSafe(composer, ".comments-comment-box__form-container") ||
+                closestSafe(composer, "form") ||
+                composer.parentElement ||
+                container
+            );
         }
 
         return composer.parentElement || container;
@@ -213,7 +233,15 @@
         slot = document.createElement("div");
         slot.className = SLOT_CLASS;
         slot.setAttribute("data-surface", surface);
-        host.prepend(slot);
+
+        if (surface === "messaging_chat") {
+            host.appendChild(slot);
+        } else if (surface === "start_post") {
+            host.appendChild(slot);
+        } else {
+            host.prepend(slot);
+        }
+
         return slot;
     }
 
@@ -900,6 +928,7 @@
         observerStarted = true;
 
         const observer = new MutationObserver(() => {
+            ensureStyles();
             debounceScan();
         });
 
