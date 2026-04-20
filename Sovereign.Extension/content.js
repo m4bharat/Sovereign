@@ -3,6 +3,9 @@
     const BUTTON_CLASS = "sovereign-linkedin-button";
     const STATUS_CLASS = "sovereign-linkedin-status";
     const SLOT_CLASS = "sovereign-action-slot";
+    const AUTH_KEY = "sovereignAuthToken";
+    const PENDING_KEY = "sovereignPendingSuggestion";
+    const STYLE_ID = "sovereign-inline-styles";
 
     let scanTimer = null;
     let observerStarted = false;
@@ -28,56 +31,62 @@
     }
 
     function ensureStyles() {
-        if (document.getElementById("sovereign-inline-styles")) return;
+        if (document.getElementById(STYLE_ID)) return;
 
         const style = document.createElement("style");
-        style.id = "sovereign-inline-styles";
+        style.id = STYLE_ID;
         style.textContent = `
             .${SLOT_CLASS} {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                margin: 8px 0;
-                padding: 4px 0;
-                flex-wrap: wrap;
-                position: relative;
-                z-index: 999999;
+                display: flex !important;
+                align-items: center !important;
+                gap: 8px !important;
+                margin: 8px 0 !important;
+                padding: 4px 0 !important;
+                flex-wrap: wrap !important;
+                position: relative !important;
+                z-index: 999999 !important;
             }
 
             .${BUTTON_CLASS} {
-                background: #0a66c2;
-                color: #fff;
-                border: none;
-                border-radius: 999px;
-                padding: 6px 12px;
-                cursor: pointer;
-                font-weight: 600;
-                font-size: 12px;
-                line-height: 1.2;
-                white-space: nowrap;
-                margin: 0;
-                z-index: 999999;
+                background: #0a66c2 !important;
+                color: #fff !important;
+                border: none !important;
+                border-radius: 999px !important;
+                padding: 6px 12px !important;
+                cursor: pointer !important;
+                font-weight: 600 !important;
+                font-size: 12px !important;
+                line-height: 1.2 !important;
+                white-space: nowrap !important;
+                margin: 0 !important;
+                z-index: 999999 !important;
+                box-shadow: none !important;
+                appearance: none !important;
+            }
+
+            .${BUTTON_CLASS}:hover {
+                background: #004182 !important;
             }
 
             .${BUTTON_CLASS}[data-sovereign-busy="true"] {
-                opacity: 0.72;
-                cursor: wait;
+                opacity: 0.72 !important;
+                cursor: wait !important;
             }
 
             .${STATUS_CLASS} {
-                font-size: 12px;
-                line-height: 1.3;
-                color: #666;
-                max-width: 420px;
-                word-break: break-word;
+                font-size: 12px !important;
+                line-height: 1.3 !important;
+                color: #666 !important;
+                max-width: 420px !important;
+                word-break: break-word !important;
             }
 
             .${STATUS_CLASS}[data-type="error"] {
-                color: #b00020;
+                color: #b00020 !important;
             }
 
             .${STATUS_CLASS}[data-type="success"] {
-                color: #1a7f37;
+                color: #1a7f37 !important;
             }
         `;
         document.head.appendChild(style);
@@ -144,7 +153,11 @@
     function detectSurface(composer) {
         if (!composer) return { surface: "unknown", container: null };
 
-        const shareBox = closestSafe(composer, ".share-box");
+        const shareBox =
+            closestSafe(composer, ".share-box") ||
+            closestSafe(composer, ".share-box-feed-entry__trigger") ||
+            closestSafe(composer, ".share-creation-state");
+
         if (shareBox) {
             return { surface: "start_post", container: shareBox };
         }
@@ -181,7 +194,9 @@
             return (
                 container?.querySelector(".share-creation-state__footer") ||
                 container?.querySelector(".share-creation-state__additional-toolbar") ||
+                container?.querySelector(".share-actions") ||
                 container?.querySelector(".share-creation-state") ||
+                composer.parentElement ||
                 container
             );
         }
@@ -191,12 +206,19 @@
             return (
                 msgForm?.querySelector(".msg-form__footer") ||
                 msgForm?.querySelector(".msg-form__msg-content-container") ||
+                msgForm?.querySelector(".msg-form__contenteditable-container") ||
+                composer.parentElement ||
                 msgForm
             );
         }
 
         if (surface === "feed_reply") {
-            return composer.parentElement || container;
+            return (
+                closestSafe(composer, ".comments-comment-box__form-container") ||
+                closestSafe(composer, "form") ||
+                composer.parentElement ||
+                container
+            );
         }
 
         return composer.parentElement || container;
@@ -211,7 +233,15 @@
         slot = document.createElement("div");
         slot.className = SLOT_CLASS;
         slot.setAttribute("data-surface", surface);
-        host.prepend(slot);
+
+        if (surface === "messaging_chat") {
+            host.appendChild(slot);
+        } else if (surface === "start_post") {
+            host.appendChild(slot);
+        } else {
+            host.prepend(slot);
+        }
+
         return slot;
     }
 
@@ -638,14 +668,51 @@
         }
     }
 
-    function handleSuggestClick(composer, button, slot) {
-        const message = getComposerText(composer);
-        if (!message) {
-            setStatus(slot, "Write something first.", "error");
-            return;
-        }
+    async function getAuthToken() {
+        const result = await chrome.storage.local.get([AUTH_KEY]);
+        return result?.[AUTH_KEY] || "";
+    }
 
-        const payload = createPayload(composer);
+    async function setPendingSuggestion(pending) {
+        await chrome.storage.local.set({ [PENDING_KEY]: pending });
+    }
+
+    async function getPendingSuggestion() {
+        const result = await chrome.storage.local.get([PENDING_KEY]);
+        return result?.[PENDING_KEY] || null;
+    }
+
+    async function clearPendingSuggestion() {
+        await chrome.storage.local.remove([PENDING_KEY]);
+    }
+
+    function openAuthPage() {
+        chrome.runtime.sendMessage({ type: "SOVEREIGN_OPEN_AUTH" }, (res) => {
+            if (chrome.runtime.lastError) {
+                console.error("[Sovereign] auth open failed:", chrome.runtime.lastError.message);
+                return;
+            }
+
+            console.log("[Sovereign] auth open response:", res);
+        });
+    }
+
+    async function ensureAuthenticated(payload, slot) {
+        const token = await getAuthToken();
+        if (token) return token;
+
+        await setPendingSuggestion({
+            payload,
+            currentUrl: window.location.href,
+            createdAt: Date.now()
+        });
+
+        setStatus(slot, "Please log in to Sovereign first.", "info");
+        openAuthPage();
+        return "";
+    }
+
+    function callDecide(payload, button, slot, composer) {
         log("request payload", {
             surface: payload.Surface,
             contact: payload.ContactId,
@@ -696,6 +763,50 @@
         });
     }
 
+    async function handleSuggestClick(composer, button, slot) {
+        const message = getComposerText(composer);
+        if (!message) {
+            setStatus(slot, "Write something first.", "error");
+            return;
+        }
+
+        const payload = createPayload(composer);
+        const token = await ensureAuthenticated(payload, slot);
+        if (!token) return;
+
+        callDecide(payload, button, slot, composer);
+    }
+
+    async function tryResumePendingSuggestion(composer) {
+        if (!composer) return;
+
+        const token = await getAuthToken();
+        if (!token) return;
+
+        const pending = await getPendingSuggestion();
+        if (!pending?.payload) return;
+
+        const { surface } = detectSurface(composer);
+        if (surface !== pending.payload.Surface) return;
+
+        const host = getInjectionHost(composer);
+        const slot = getOrCreateActionSlot(host, surface);
+        if (!slot) return;
+
+        let button = slot.querySelector(`.${BUTTON_CLASS}`);
+        if (!button) {
+            button = document.createElement("button");
+            button.className = BUTTON_CLASS;
+            button.type = "button";
+            button.textContent = "Suggest with Sovereign";
+            slot.prepend(button);
+        }
+
+        setStatus(slot, "Resuming your saved suggestion...", "info");
+        await clearPendingSuggestion();
+        callDecide(pending.payload, button, slot, composer);
+    }
+
     function injectButton(composer) {
         if (!composer || !isVisible(composer)) return;
 
@@ -719,12 +830,14 @@
             button.addEventListener("click", (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                handleSuggestClick(composer, button, slot);
+                void handleSuggestClick(composer, button, slot);
             });
 
             slot.prepend(button);
             getOrCreateStatus(slot);
         }
+
+        void tryResumePendingSuggestion(composer);
     }
 
     function findCandidateEditorsByQuery() {
@@ -815,6 +928,7 @@
         observerStarted = true;
 
         const observer = new MutationObserver(() => {
+            ensureStyles();
             debounceScan();
         });
 

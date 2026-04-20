@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Text.RegularExpressions;
 using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
@@ -7,39 +8,66 @@ namespace Sovereign.Intelligence.Services;
 
 public sealed class SocialSituationDetector : ISocialSituationDetector
 {
-    private static readonly string[] CtaMarkers =
-    {
-        "how ",
-        "what ",
-        "why ",
-        "curious",
-        "would love to hear",
-        "thoughts?",
-        "any advice",
-        "looking for",
-        "seeking",
-        "can anyone",
-        "has anyone",
-        "what do you think",
-        "would you do",
-        "anyone else"
-    };
-
-    private static bool LooksLikeCtaOrQuestion(MessageContext context)
+    private SocialSituation DetectSpecificSituations(MessageContext context)
     {
         var source = (context.SourceText ?? string.Empty).Trim().ToLowerInvariant();
-        var draft = (context.Message ?? string.Empty).Trim().ToLowerInvariant();
 
-        if (source.Contains("?") || draft.Contains("?"))
-            return true;
-
-        foreach (var marker in CtaMarkers)
+        // Priority 1: Defer/No-Reply (highest confidence, block others)
+        if (ContainsAny(source, "reply later", "i'll reply later", "will reply later", "respond later", "reply when i", "more details soon"))
         {
-            if (source.Contains(marker) || draft.Contains(marker))
-                return true;
+            return new SocialSituation { Type = "defer_no_reply", Confidence = 0.95, Signals = new[] { "explicit defer" } };
         }
 
-        return false;
+        if (ContainsAny(source, "controversial", "disagree", "hate", "worst", "terrible", "disaster", "fail") || 
+            Regex.IsMatch(source, @"\b(woke|wokeism|pronouns|politic|election|trump|biden|climate hoax)\b"))
+        {
+            return new SocialSituation { Type = "controversial_no_reply", Confidence = 0.92, Signals = new[] { "high risk controversy" } };
+        }
+
+        // Priority 2: High-confidence specifics
+        if (Regex.IsMatch(source, @"(?:promotion|milestone|new role|new chapter|grateful|gratitude|happy to share|thrilled|years at|anniversary)", RegexOptions.IgnoreCase))
+        {
+            return new SocialSituation { Type = "achievement_share", Confidence = 0.93, Signals = new[] { "career milestone" } };
+        }
+
+        if (Regex.IsMatch(source, @"(?:happy holidays|merry christmas|happy new year|season's greetings|joyful|prosperous|eid|diwali|hanukkah)", RegexOptions.IgnoreCase))
+        {
+            return new SocialSituation { Type = "holiday_greeting", Confidence = 0.95, Signals = new[] { "seasonal greeting" } };
+        }
+
+        if (ContainsAny(source, "team update", "group announcement", "we're hiring", "quarterly", "financial update", "product launch"))
+        {
+            return new SocialSituation { Type = "group_announcement", Confidence = 0.90, Signals = new[] { "org/team broadcast" } };
+        }
+
+        if (Regex.IsMatch(source, @"(?:#OpenToWork|#JobSearch|job search|open to work|open to opportunities|excited to announce new role)", RegexOptions.IgnoreCase))
+        {
+            return new SocialSituation { Type = "job_search", Confidence = 0.92, Signals = new[] { "job seeking" } };
+        }
+
+        if (ContainsAny(source, "funding", "raised", "series a", "series b", "investment", "backers", "thrilled to announce"))
+        {
+            return new SocialSituation { Type = "industry_news", Confidence = 0.88, Signals = new[] { "company milestone" } };
+        }
+
+        if (ContainsAny(source, "reflecting", "gratitude", "connections", "past year", "it's been"))
+        {
+            return new SocialSituation { Type = "relationship_preservation", Confidence = 0.85, Signals = new[] { "rm maintenance" } };
+        }
+
+        // Priority 3: CTA
+        if (Regex.IsMatch(source, @"(?:drop in comments|comment below|share your|let me know|tell me|which one|what's your|your thoughts?|your take)", RegexOptions.IgnoreCase))
+        {
+            return new SocialSituation { Type = "cta_engagement", Confidence = 0.92, Signals = new[] { "explicit CTA" } };
+        }
+
+        // Priority 4: Personal update
+        if (ContainsAny(source, "just wanted to share", "quick update", "thought you might like to know"))
+        {
+            return new SocialSituation { Type = "personal_update", Confidence = 0.75, Signals = new[] { "casual share" } };
+        }
+
+        return null;
     }
 
     public SocialSituation Detect(MessageContext context)
@@ -96,14 +124,9 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
             };
         }
 
-        if (LooksLikeCtaOrQuestion(context))
-        {
-            return new SocialSituation
-            {
-                Type = "cta_or_question",
-                Summary = "The source is asking for input, advice, or direct engagement."
-            };
-        }
+        var specific = DetectSpecificSituations(context);
+        if (specific != null)
+            return specific;
 
         var source = context.SourceText ?? string.Empty;
 
@@ -114,22 +137,14 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
         {
             return new SocialSituation
             {
-                Type = "milestone",
+                Type = "achievement_share",
                 Confidence = 0.90,
                 Signals = new[] { "career milestone", "gratitude", "new beginning", "isPublicCelebration" }
             };
         }
 
-        if (ContainsAny(source,
-                "hiring", "we're hiring", "we are hiring", "job opening", "career opportunity"))
-        {
-            return new SocialSituation
-            {
-                Type = "hiring",
-                Confidence = 0.85,
-                Signals = new[] { "job opportunity", "career transition", "containsCareerTransition" }
-            };
-        }
+// hiring -> group_announcement (handled in specific)
+        // Legacy hiring case deprecated
 
         if (ContainsAny(source,
                 "what is", "pattern", "architecture", "key takeaway", "example",
@@ -257,27 +272,11 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
             };
         }
 
-        if (ContainsAny(source,
-                "team update", "implementing", "starting next", "process changes", "quarterly results", "financial update", "announcement", "launching a new product"))
-        {
-            return new SocialSituation
-            {
-                Type = "update",
-                Confidence = 0.70,
-                Signals = new[] { "team communication", "process change", "acknowledgment needed" }
-            };
-        }
+// team/org -> group_announcement (handled in specific)
+        // Legacy update deprecated
 
-        if (ContainsAny(source,
-                "happy holidays", "holiday season", "joyful", "prosperous new year"))
-        {
-            return new SocialSituation
-            {
-                Type = "greeting",
-                Confidence = 0.90,
-                Signals = new[] { "seasonal greeting", "holiday wishes", "courtesy response" }
-            };
-        }
+// holiday -> handled in specific (holiday_greeting)
+        // Legacy greeting deprecated
 
         if (ContainsAny(source,
                 "good morning", "good afternoon", "good evening", "have a great day", "hope you're well", "hope this finds you well", "morning everyone", "evening everyone"))
@@ -293,10 +292,11 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
         return new SocialSituation
         {
             Type = "general",
-            Confidence = 0.55
+            Confidence = 0.40,
+            Signals = new[] { "true generic fallback" }
         };
     }
 
     private static bool ContainsAny(string text, params string[] terms) =>
-        terms.Any(term => text.Contains(term, StringComparison.OrdinalIgnoreCase));
+        terms.Any(term => Regex.IsMatch(text, $@"\b{Regex.Escape(term)}\b", RegexOptions.IgnoreCase));
 }

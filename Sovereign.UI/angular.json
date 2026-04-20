@@ -11,12 +11,17 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputPath": "dist/sovereign-web-mvp",
+            "outputPath": "../Sovereign.Extension/ui",
+            "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": ["zone.js"],
             "tsConfig": "tsconfig.app.json",
-            "assets": [{ "glob": "**/*", "input": "public" }],
-            "styles": ["src/styles.css"]
+            "assets": [
+              { "glob": "**/*", "input": "public" }
+            ],
+            "styles": ["src/styles.css"],
+            "baseHref": "./",
+            "deployUrl": "./"
           },
           "configurations": {
             "development": {

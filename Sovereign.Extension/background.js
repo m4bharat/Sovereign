@@ -1,6 +1,6 @@
 const DEFAULTS = {
     sovereignApiBaseUrl: "https://localhost:55270",
-    sovereignToken: "",
+    sovereignAuthToken: "",
     sovereignUserId: "user-001",
     sovereignUseDecisionV2: true
 };
@@ -14,18 +14,28 @@ function getStorage(keys) {
 async function getSettings() {
     const settings = await getStorage([
         "sovereignApiBaseUrl",
+        "sovereignAuthToken",
         "sovereignToken",
         "sovereignUserId",
-        "sovereignUseDecisionV2"
+        "sovereignUseDecisionV2",
+        "sovereignAuthUrl"
     ]);
+
+    const authToken =
+        settings.sovereignAuthToken ||
+        settings.sovereignToken ||
+        DEFAULTS.sovereignAuthToken;
 
     return {
         sovereignApiBaseUrl: settings.sovereignApiBaseUrl || DEFAULTS.sovereignApiBaseUrl,
-        sovereignToken: settings.sovereignToken || DEFAULTS.sovereignToken,
+        sovereignAuthToken: authToken,
         sovereignUserId: settings.sovereignUserId || DEFAULTS.sovereignUserId,
-        sovereignUseDecisionV2: typeof settings.sovereignUseDecisionV2 === "boolean"
-            ? settings.sovereignUseDecisionV2
-            : DEFAULTS.sovereignUseDecisionV2
+        sovereignUseDecisionV2:
+            typeof settings.sovereignUseDecisionV2 === "boolean"
+                ? settings.sovereignUseDecisionV2
+                : DEFAULTS.sovereignUseDecisionV2,
+        sovereignAuthUrl:
+            settings.sovereignAuthUrl || chrome.runtime.getURL("ui/browser/index.html#/auth")
     };
 }
 
@@ -56,12 +66,24 @@ function extractErrorMessage(status, data, rawText) {
     return `HTTP ${status}`;
 }
 
+async function focusBestLinkedInTab() {
+    const tabs = await chrome.tabs.query({ url: "https://www.linkedin.com/*" });
+    if (!tabs.length) return;
+
+    const activeLinkedInTab = tabs.find((t) => t.active) || tabs[0];
+    if (activeLinkedInTab.windowId != null) {
+        await chrome.windows.update(activeLinkedInTab.windowId, { focused: true });
+    }
+    if (activeLinkedInTab.id != null) {
+        await chrome.tabs.update(activeLinkedInTab.id, { active: true });
+    }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message) {
         return false;
     }
 
-    // Handle settings retrieval
     if (message.type === "SOVEREIGN_GET_SETTINGS") {
         getSettings()
             .then((settings) => {
@@ -73,7 +95,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
-    // Handle settings save
     if (message.type === "SOVEREIGN_SAVE_SETTINGS") {
         const payload = message.payload || {};
         chrome.storage.local.set(payload, () => {
@@ -82,7 +103,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
-    // Handle decision requests
+    if (message.type === "SOVEREIGN_OPEN_AUTH") {
+        getSettings()
+            .then((settings) => {
+                chrome.tabs.create({ url: settings.sovereignAuthUrl }, () => {
+                    sendResponse({ ok: true });
+                });
+            })
+            .catch((error) => {
+                sendResponse({ ok: false, error: error?.message || String(error) });
+            });
+        return true;
+    }
+
+    if (message.type === "SOVEREIGN_AUTH_COMPLETED") {
+        focusBestLinkedInTab()
+            .then(() => sendResponse({ ok: true }))
+            .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
+        return true;
+    }
+
     if (message.type !== "SOVEREIGN_DECIDE") {
         return false;
     }
@@ -101,7 +141,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    ...(settings.sovereignToken ? { Authorization: `Bearer ${settings.sovereignToken}` } : {})
+                    ...(settings.sovereignAuthToken
+                        ? { Authorization: `Bearer ${settings.sovereignAuthToken}` }
+                        : {})
                 },
                 body: JSON.stringify(requestBody)
             });

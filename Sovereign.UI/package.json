@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "ng serve",
-    "build": "ng build"
+     "build": "ng build",
+    "build:extension": "ng build && node scripts/copy-to-extension.js"
   },
   "dependencies": {
     "@angular/animations": "21.2.1",

@@ -471,22 +471,15 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
     {
         var text = reply.Trim().ToLowerInvariant();
 
-        var genericPhrases = new[]
+        var forbiddenPhrases = new[]
         {
-            "great post",
-            "well said",
-            "thanks for sharing",
-            "interesting perspective",
-            "nice breakdown",
-            "good point",
-            "so true",
-            "very insightful",
-            "thoughtful perspective",
-            "interesting direction",
-            "clear and useful framing"
+            "great post", "well said", "thanks for sharing", "interesting perspective", "nice breakdown",
+            "good point", "so true", "very insightful", "thoughtful perspective", "interesting direction",
+            "clear framing", "useful framing", "great perspective", "well put", "spot on",
+            "deployment speed", "operationalize", "scale", "execution layer" // task banned generics
         };
 
-        return genericPhrases.Any(text.Contains);
+        return forbiddenPhrases.Any(text.Contains);
     }
 
     private static bool ShouldPolish(string reply)
