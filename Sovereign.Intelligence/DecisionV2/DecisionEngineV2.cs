@@ -102,7 +102,7 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             messageContext,
             relationshipAnalysis);
 
-        var winnerSelection = _winnerSelectionEngine.SelectBest(scoredCandidates, messageContext);
+        var winnerSelection = _winnerSelectionEngine.SelectBest(scoredCandidates, situation, messageContext);
         var winner = winnerSelection.Winner;
 
 

@@ -24,7 +24,7 @@ public sealed class SocialMovePlanner : ISocialMovePlanner
             ["controversial_no_reply"] = (new[] { "no_reply" }, Array.Empty<string>()),
 
             // Surface / mode preserved
-            ["compose_post"] = (new[] { "draft_post" }, new[] { "rewrite_user_intent" }),
+            ["compose_post"] = (new[] { "draft_post" }, Array.Empty<string>()),
             ["rewrite_feed_reply"] = (new[] { "rewrite_user_intent" }, new[] { "light_touch", "add_specific_insight" }),
             ["rewrite_direct_message"] = (new[] { "rewrite_user_intent" }, new[] { "respond_helpfully" }),
             ["direct_message"] = (new[] { "respond_helpfully" }, new[] { "rewrite_user_intent", "acknowledge_and_continue" }),
