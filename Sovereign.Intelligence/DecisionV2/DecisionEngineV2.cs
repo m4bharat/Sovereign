@@ -13,6 +13,7 @@ using Sovereign.Intelligence.Engines;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 using Sovereign.Intelligence.Prompts;
+using Sovereign.Intelligence.Services;
 
 namespace Sovereign.Intelligence.DecisionV2;
 
@@ -121,6 +122,10 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         messageContext = MergeDerivedSignals(messageContext, relationshipAnalysis);
 
         var situation = _socialSituationDetector.Detect(messageContext);
+        _logger.LogInformation(
+            "Deterministic situation detected: {SituationType} for surface {Surface}.",
+            situation.Type,
+            messageContext.Surface);
 
         if (ShouldUseAiClassifier(messageContext, situation))
         {
@@ -131,12 +136,23 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             if (aiClassification is not null &&
                 aiClassification.Confidence >= 0.80)
             {
+                _logger.LogInformation(
+                    "AI situation override applied: {SituationType} (confidence {Confidence:F2}).",
+                    aiClassification.SituationType,
+                    aiClassification.Confidence);
                 situation = new SocialSituation
                 {
                     Type = aiClassification.SituationType,
                     Confidence = aiClassification.Confidence,
                     Summary = aiClassification.Rationale
                 };
+            }
+            else if (aiClassification is not null)
+            {
+                _logger.LogInformation(
+                    "AI situation classification ignored: {SituationType} (confidence {Confidence:F2}).",
+                    aiClassification.SituationType,
+                    aiClassification.Confidence);
             }
         }
 
@@ -153,8 +169,31 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             messageContext,
             relationshipAnalysis);
 
-        var winnerSelection = _winnerSelectionEngine.SelectBest(scoredCandidates, situation, messageContext);
+        var winnerSelection = _winnerSelectionEngine.SelectBest(scoredCandidates, situation, messageContext)
+                              ?? _winnerSelectionEngine.SelectBest(scoredCandidates, messageContext);
+
+        if (winnerSelection?.Winner is null)
+        {
+            winnerSelection = new WinnerSelectionResult
+            {
+                Winner = scoredCandidates
+                    .Select(score => score.Candidate)
+                    .FirstOrDefault(candidate => candidate is not null)
+                    ?? new SocialMoveCandidate
+                    {
+                        Move = "no_reply",
+                        Reply = string.Empty,
+                        Rationale = "No winner was returned."
+                    },
+                Alternatives = Array.Empty<SocialMoveCandidate>()
+            };
+        }
+
         var winner = winnerSelection.Winner;
+        _logger.LogInformation(
+            "Winner selected: move {Move} for situation {SituationType}.",
+            winner.Move,
+            situation.Type);
 
 
         if (ShouldSkipReply(winner, input.AllowNoReply, messageContext))
@@ -188,6 +227,7 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
 
         if (!string.IsNullOrWhiteSpace(expandedInsight))
         {
+            _logger.LogInformation("AI insight expansion produced an improved comment for move {Move}.", winner.Move);
             winner.Reply = expandedInsight;
         }
 
@@ -356,6 +396,8 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         if (string.Equals(winner.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
             return winner;
 
+        var fallbackReply = winner.Reply ?? string.Empty;
+
         try
         {
             var prompt = BuildAiFirstPrompt(winner, context, situation);
@@ -365,23 +407,36 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             {
                 var aiReply = result.Reply.Trim();
 
-                if (ContainsUnsupportedNumber(aiReply, context))
+                if (!TryValidateFinalReply(aiReply, winner, context, situation, out var validationFailure))
                 {
-                    _logger.LogWarning("AI reply contained unsupported numeric claim. Falling back.");
-                    return winner;
+                    _logger.LogWarning(
+                        "AI-generated reply failed validation: {ValidationFailure}. Falling back.",
+                        validationFailure);
+                    return RestoreOrFallbackWinner(winner, fallbackReply, context, situation, validationFailure);
                 }
 
                 winner.Reply = aiReply;
                 winner.GenerationConfidence = Math.Max(winner.GenerationConfidence, result.Confidence);
                 winner.Alternatives = result.Alternatives ?? winner.Alternatives;
+                _logger.LogInformation("AI-first generation succeeded for move {Move}.", winner.Move);
+            }
+            else
+            {
+                _logger.LogInformation("AI-first generation returned empty content for move {Move}.", winner.Move);
             }
 
-            return winner;
+            if (TryValidateFinalReply(winner.Reply, winner, context, situation, out var deterministicValidationFailure))
+                return winner;
+
+            _logger.LogWarning(
+                "Post-AI winner failed validation: {ValidationFailure}. Falling back.",
+                deterministicValidationFailure);
+            return RestoreOrFallbackWinner(winner, fallbackReply, context, situation, deterministicValidationFailure);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "AI-first generation failed. Falling back to deterministic candidate.");
-            return winner;
+            return RestoreOrFallbackWinner(winner, fallbackReply, context, situation, "ai generation failed");
         }
     }
 
@@ -468,6 +523,282 @@ Rules:
             return false;
 
         return numbers.Any(n => !source.Contains(n, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private SocialMoveCandidate RestoreOrFallbackWinner(
+        SocialMoveCandidate winner,
+        string fallbackReply,
+        MessageContext context,
+        SocialSituation situation,
+        string reason)
+    {
+        if (TryValidateFinalReply(fallbackReply, winner, context, situation, out _))
+        {
+            winner.Reply = fallbackReply;
+            _logger.LogWarning(
+                "Using deterministic fallback reply after validation failure: {Reason}.",
+                reason);
+            return winner;
+        }
+
+        winner.Reply = BuildSafeFallbackReply(winner, context, situation);
+        winner.GenerationConfidence = Math.Min(winner.GenerationConfidence, 0.55);
+        _logger.LogWarning(
+            "Using safe fallback reply after deterministic fallback also failed validation: {Reason}.",
+            reason);
+        return winner;
+    }
+
+    private static bool TryValidateFinalReply(
+        string? reply,
+        SocialMoveCandidate winner,
+        MessageContext context,
+        SocialSituation situation,
+        out string failureReason)
+    {
+        var text = (reply ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            failureReason = "reply is empty";
+            return false;
+        }
+
+        if (ContainsUnsupportedNumber(text, context))
+        {
+            failureReason = "reply contains unsupported numeric claims";
+            return false;
+        }
+
+        if (ContainsForbiddenGenericPhrase(text))
+        {
+            failureReason = "reply contains banned generic phrasing";
+            return false;
+        }
+
+        if (ContainsUnsupportedClaimMarkers(text, context))
+        {
+            failureReason = "feed reply introduces unsupported factual framing";
+            return false;
+        }
+
+        if (ContainsWrongAuthorName(text, context))
+        {
+            failureReason = "reply appears to use the wrong author name";
+            return false;
+        }
+
+        if (IsThoughtLeadershipMove(winner.Move) &&
+            string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase) &&
+            IsTooDerivative(text, context))
+        {
+            failureReason = "thought-leadership reply is too derivative";
+            return false;
+        }
+
+        if (IsChatReplyInvalid(text, context))
+        {
+            failureReason = "chat reply includes command or public-comment artifacts";
+            return false;
+        }
+
+        if (IsComposeReplyInvalid(text, context, situation))
+        {
+            failureReason = "compose output is too short or comment-like";
+            return false;
+        }
+
+        failureReason = string.Empty;
+        return true;
+    }
+
+    private static bool ContainsForbiddenGenericPhrase(string reply)
+    {
+        var banned = new[]
+        {
+            "great post",
+            "well said",
+            "thanks for sharing",
+            "your experience underscores",
+            "you nailed",
+            "what stayed with me",
+            "point around",
+            "spot on"
+        };
+
+        return banned.Any(phrase => reply.Contains(phrase, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ContainsUnsupportedClaimMarkers(string reply, MessageContext context)
+    {
+        if (!string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var source = string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.SourceTitle ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty);
+
+        var unsupportedMarkers = new[]
+        {
+            "studies show",
+            "research shows",
+            "research says",
+            "on average",
+            "according to data",
+            "according to research",
+            "statistically",
+            "survey shows"
+        };
+
+        return unsupportedMarkers.Any(marker =>
+            reply.Contains(marker, StringComparison.OrdinalIgnoreCase) &&
+            !source.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ContainsWrongAuthorName(string reply, MessageContext context)
+    {
+        var author = (context.SourceAuthor ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(author))
+            return false;
+
+        var authorTokens = Regex.Matches(author, @"[A-Za-z][A-Za-z'-]{1,}")
+            .Select(m => m.Value)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (authorTokens.Count == 0)
+            return false;
+
+        var leadingName = Regex.Match(reply, @"^(?<name>[A-Z][a-z]+),");
+        if (leadingName.Success && !authorTokens.Contains(leadingName.Groups["name"].Value))
+            return true;
+
+        var directAddress = Regex.Match(
+            reply,
+            @"\b(?:congratulations|congrats|thank you|thanks|hi|hello)\s+(?<name>[A-Z][a-z]+)\b");
+
+        return directAddress.Success && !authorTokens.Contains(directAddress.Groups["name"].Value);
+    }
+
+    private static bool IsThoughtLeadershipMove(string? move)
+    {
+        var value = (move ?? string.Empty).Trim().ToLowerInvariant();
+        return value is "add_insight" or "add_specific_insight" or "add_nuance" or "engage";
+    }
+
+    private static bool IsTooDerivative(string reply, MessageContext context)
+    {
+        var source = string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.SourceTitle ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty).ToLowerInvariant();
+
+        var sourceTokens = Regex.Matches(source, @"[a-z0-9][a-z0-9'-]{2,}")
+            .Select(m => m.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var replyTokens = Regex.Matches(reply.ToLowerInvariant(), @"[a-z0-9][a-z0-9'-]{2,}")
+            .Select(m => m.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (replyTokens.Count == 0)
+            return true;
+
+        var overlap = replyTokens.Count(sourceTokens.Contains);
+        return (double)overlap / replyTokens.Count > 0.55;
+    }
+
+    private static bool IsChatReplyInvalid(string reply, MessageContext context)
+    {
+        if (!string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(context.Surface, "messaging_chat", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (reply.Contains("linkedin", StringComparison.OrdinalIgnoreCase) ||
+            reply.Contains("point around", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var trimmed = reply.TrimStart();
+        return trimmed.StartsWith("reply", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("comment", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsComposeReplyInvalid(string reply, MessageContext context, SocialSituation situation)
+    {
+        if (!string.Equals(situation.Type, "compose_post", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (reply.Length < 120)
+            return true;
+
+        var lower = reply.ToLowerInvariant();
+        if (lower.StartsWith("great post") ||
+            lower.StartsWith("well said") ||
+            lower.StartsWith("thanks for sharing"))
+        {
+            return true;
+        }
+
+        var sentenceCount = Regex.Matches(reply, @"[.!?]").Count;
+        return sentenceCount < 2;
+    }
+
+    private static string BuildSafeFallbackReply(
+        SocialMoveCandidate winner,
+        MessageContext context,
+        SocialSituation situation)
+    {
+        if (string.Equals(situation.Type, "compose_post", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase))
+        {
+            return "AI is no longer just a technology trend. It is becoming a business discipline that changes how teams operate, decide, and deliver.\n\nThe real shift is not model quality alone. It is the ability to apply AI inside real workflows with clear ownership, measurable outcomes, and feedback loops that improve over time.\n\nThe teams that win will be the ones that move beyond experimentation and turn AI into repeatable execution.\n\nHow are you thinking about AI adoption this year?\n\n#AI #ArtificialIntelligence #Leadership";
+        }
+
+        if (string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(context.Surface, "messaging_chat", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildSafeChatFallback(context);
+        }
+
+        if (IsThoughtLeadershipMove(winner.Move))
+            return "The operational challenge usually appears after the first implementation - that is where portability, evaluation, and governance start to matter more than the initial model choice.";
+
+        if (string.Equals(winner.Move, "congratulate", StringComparison.OrdinalIgnoreCase))
+        {
+            var author = (context.SourceAuthor ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(author))
+                return $"Congratulations {author} - exciting milestone and a strong step forward. Wishing you continued growth in this new chapter.";
+
+            return "Congratulations on the milestone - this is an exciting step forward, and I am wishing you continued growth in this new chapter.";
+        }
+
+        return "Appreciate the update here. The practical implication comes through clearly.";
+    }
+
+    private static string BuildSafeChatFallback(MessageContext context)
+    {
+        var source = string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty);
+
+        if (source.Contains("happy belated birthday", StringComparison.OrdinalIgnoreCase))
+            return "Thank you so much! Really appreciate your wishes.";
+
+        if (source.Contains("happy birthday", StringComparison.OrdinalIgnoreCase))
+            return "Thank you so much! Really appreciate it.";
+
+        return "Thanks so much - I really appreciate it.";
     }
 
     private static DecisionV2Result BuildDecisionResult(

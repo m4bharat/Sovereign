@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Interfaces;
@@ -9,10 +10,14 @@ namespace Sovereign.Intelligence.Services;
 public sealed class AiInsightExpansionService : IAiInsightExpansionService
 {
     private readonly ILlmClient _llmClient;
+    private readonly ILogger<AiInsightExpansionService> _logger;
 
-    public AiInsightExpansionService(ILlmClient llmClient)
+    public AiInsightExpansionService(
+        ILlmClient llmClient,
+        ILogger<AiInsightExpansionService> logger)
     {
         _llmClient = llmClient;
+        _logger = logger;
     }
 
     public async Task<string?> GenerateInsightCommentAsync(
@@ -23,19 +28,34 @@ public sealed class AiInsightExpansionService : IAiInsightExpansionService
         if (!ShouldUseInsightExpansion(context, candidate))
             return null;
 
-        var prompt = BuildPrompt(context, candidate);
+        try
+        {
+            var prompt = BuildPrompt(context, candidate);
 
-        var result = await _llmClient.CompleteDecisionV2Async(prompt, cancellationToken);
+            var result = await _llmClient.CompleteDecisionV2Async(prompt, cancellationToken);
 
-        var reply = result.Reply?.Trim();
+            var reply = result.Reply?.Trim();
 
-        if (string.IsNullOrWhiteSpace(reply))
+            if (string.IsNullOrWhiteSpace(reply))
+            {
+                _logger.LogInformation("AI insight expansion returned an empty reply for move {Move}.", candidate.Move);
+                return null;
+            }
+
+            if (!IsValidInsightReply(reply, context))
+            {
+                _logger.LogInformation("AI insight expansion reply was rejected by validation for move {Move}.", candidate.Move);
+                return null;
+            }
+
+            _logger.LogInformation("AI insight expansion produced a validated reply for move {Move}.", candidate.Move);
+            return reply;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AI insight expansion failed. Falling back to deterministic reply.");
             return null;
-
-        if (!IsValidInsightReply(reply, context))
-            return null;
-
-        return reply;
+        }
     }
 
     private static bool ShouldUseInsightExpansion(
@@ -164,8 +184,11 @@ Selected move:
             "great post",
             "well said",
             "thanks for sharing",
+            "your experience underscores",
+            "you nailed",
             "what stayed with me",
             "point around",
+            "spot on",
             "very insightful",
             "love this",
             "so true"

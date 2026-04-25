@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.Interfaces;
@@ -9,28 +10,35 @@ namespace Sovereign.Intelligence.Services;
 public sealed class AiSituationClassifier : IAiSituationClassifier
 {
     private readonly ILlmClient _llmClient;
+    private readonly ILogger<AiSituationClassifier> _logger;
 
-    public AiSituationClassifier(ILlmClient llmClient)
+    public AiSituationClassifier(
+        ILlmClient llmClient,
+        ILogger<AiSituationClassifier> logger)
     {
         _llmClient = llmClient;
+        _logger = logger;
     }
 
     public async Task<AiSituationClassification?> ClassifyAsync(
         MessageContext context,
         CancellationToken cancellationToken)
     {
-        var prompt = BuildPrompt(context);
-        var raw = await _llmClient.CompleteAsync(prompt, cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-
         try
         {
+            var prompt = BuildPrompt(context);
+            var raw = await _llmClient.CompleteAsync(prompt, cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                _logger.LogInformation("AI situation classifier returned an empty payload.");
+                return null;
+            }
+
             using var doc = JsonDocument.Parse(raw);
             var root = doc.RootElement;
 
-            return new AiSituationClassification
+            var classification = new AiSituationClassification
             {
                 SituationType = root.TryGetProperty("situationType", out var situationType)
                     ? situationType.GetString() ?? "general"
@@ -53,9 +61,17 @@ public sealed class AiSituationClassifier : IAiSituationClassifier
                     ? rationale.GetString() ?? string.Empty
                     : string.Empty
             };
+
+            _logger.LogInformation(
+                "AI situation classifier returned {SituationType} with confidence {Confidence:F2}.",
+                classification.SituationType,
+                classification.Confidence);
+
+            return classification;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "AI situation classification failed. Falling back to deterministic detection.");
             return null;
         }
     }

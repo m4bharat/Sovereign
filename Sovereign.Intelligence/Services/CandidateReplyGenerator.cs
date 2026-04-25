@@ -302,6 +302,17 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
 
     private static string GenerateRespondReply(MessageContext context, SocialMoveCandidate candidate)
     {
+        var source = string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty);
+
+        if (source.Contains("happy belated birthday", StringComparison.OrdinalIgnoreCase))
+            return "Thank you so much! Really appreciate your wishes.";
+
+        if (source.Contains("happy birthday", StringComparison.OrdinalIgnoreCase))
+            return "Thank you so much! Really appreciate it.";
+
         var author = context.SourceAuthor?.Trim();
 
         if (!string.IsNullOrWhiteSpace(author))

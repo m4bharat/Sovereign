@@ -1,16 +1,9 @@
-﻿using System.Linq.Expressions;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Sovereign.Intelligence.Configuration;
 using Sovereign.Intelligence.DecisionV2;
-using System;
-using System.IO;
-using System.Net;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Sovereign.Intelligence.Clients;
 
@@ -29,57 +22,21 @@ public sealed class OllamaLlmClient : ILlmClient
     {
         try
         {
-            using var request = new HttpRequestMessage(
-                HttpMethod.Post,
-                $"{_options.BaseUrl.TrimEnd('/')}/chat");
-            // --- ADD THIS LINE FOR CLOUD AUTHENTICATION ---
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ApiKey);
-            // ----------------------------------------------
-            var payload = new
-            {
-                model = _options.Model,
-                stream = _options.Stream,
-                messages = new object[]
-                {
-                new { role = "system", content = _options.SystemPrompt },
-                new { role = "user", content = prompt }
-                }
-            };
-
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json");
-
+            using var request = BuildChatRequest(prompt);
             using var response = await _httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 ct);
 
             if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync(ct);
-                throw new HttpRequestException(
-                    $"Ollama request failed with {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}",
-                    null,
-                    response.StatusCode);
-            }
+                return "{}";
 
             var json = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(json);
-
-            if (doc.RootElement.TryGetProperty("message", out var messageElement) &&
-                messageElement.TryGetProperty("content", out var contentElement))
-            {
-                return contentElement.GetString() ?? "{}";
-            }
-
-            return "{}";
+            return ExtractRawModelText(json);
         }
-
-        catch (Exception ex)
+        catch
         {
-            throw new Exception("Error completing prompt with Ollama", ex);
+            return "{}";
         }
     }
 
@@ -87,63 +44,21 @@ public sealed class OllamaLlmClient : ILlmClient
     {
         try
         {
-            using var request = new HttpRequestMessage(
-                HttpMethod.Post,
-                $"{_options.BaseUrl.TrimEnd('/')}/chat");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
-
-            var payload = new
-            {
-                model = _options.Model,
-                stream = _options.Stream,
-                messages = new object[]
-                {
-                    new { role = "system", content = _options.SystemPrompt },
-                    new { role = "user", content = prompt }
-                }
-            };
-
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json");
-
+            using var request = BuildChatRequest(prompt);
             using var response = await _httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 ct);
 
             if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync(ct);
-                throw new HttpRequestException(
-                    $"Ollama request failed with {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}",
-                    null,
-                    response.StatusCode);
-            }
+                return SafeDecisionResult("Ollama request failed");
 
             var json = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(json);
-
-            if (doc.RootElement.TryGetProperty("message", out var messageElement) &&
-                messageElement.TryGetProperty("content", out var contentElement))
-            {
-                var content = contentElement.GetString() ?? "{}";
-                using var contentDoc = JsonDocument.Parse(content);
-                return ParseDecisionResult(contentDoc.RootElement);
-            }
-
-            return new DecisionV2Result
-            {
-                Reply = "{}",
-                Confidence = 0.0,
-                Rationale = "Failed to parse response",
-                Alternatives = new List<string>()
-            };
+            return ParseDecisionResponse(json);
         }
-        catch (Exception ex)
+        catch
         {
-            throw new Exception("Error completing DecisionV2 prompt with Ollama", ex);
+            return SafeDecisionResult("Ollama request failed");
         }
     }
 
@@ -174,13 +89,159 @@ public sealed class OllamaLlmClient : ILlmClient
         }
     }
 
+    private HttpRequestMessage BuildChatRequest(string prompt)
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{_options.BaseUrl.TrimEnd('/')}/chat");
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+
+        var payload = new
+        {
+            model = _options.Model,
+            stream = _options.Stream,
+            messages = new object[]
+            {
+                new { role = "system", content = _options.SystemPrompt },
+                new { role = "user", content = prompt }
+            }
+        };
+
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(payload),
+            Encoding.UTF8,
+            "application/json");
+
+        return request;
+    }
+
     private async IAsyncEnumerable<string> ParseStream(Stream stream)
     {
         using var reader = new StreamReader(stream);
         while (!reader.EndOfStream)
         {
-            yield return await reader.ReadLineAsync();
+            var line = await reader.ReadLineAsync();
+            if (line is not null)
+                yield return line;
         }
+    }
+
+    private static DecisionV2Result ParseDecisionResponse(string json)
+    {
+        var modelText = ExtractRawModelText(json);
+        if (string.IsNullOrWhiteSpace(modelText))
+            return SafeDecisionResult("Failed to parse response");
+
+        var extractedJson = TryExtractJsonObject(modelText);
+        if (string.IsNullOrWhiteSpace(extractedJson))
+        {
+            return new DecisionV2Result
+            {
+                Reply = modelText.Trim(),
+                Confidence = 0.0,
+                Rationale = "Parsed plain-text response",
+                Alternatives = new List<string>()
+            };
+        }
+
+        try
+        {
+            using var contentDoc = JsonDocument.Parse(extractedJson);
+            return ParseDecisionResult(contentDoc.RootElement);
+        }
+        catch
+        {
+            return new DecisionV2Result
+            {
+                Reply = modelText.Trim(),
+                Confidence = 0.0,
+                Rationale = "Failed to parse structured response",
+                Alternatives = new List<string>()
+            };
+        }
+    }
+
+    private static string ExtractRawModelText(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("message", out var messageElement) &&
+                messageElement.ValueKind == JsonValueKind.Object &&
+                messageElement.TryGetProperty("content", out var contentElement) &&
+                contentElement.ValueKind == JsonValueKind.String)
+            {
+                return contentElement.GetString() ?? "{}";
+            }
+
+            if (root.TryGetProperty("response", out var responseElement) &&
+                responseElement.ValueKind == JsonValueKind.String)
+            {
+                return responseElement.GetString() ?? "{}";
+            }
+
+            if (root.ValueKind == JsonValueKind.String)
+                return root.GetString() ?? "{}";
+        }
+        catch
+        {
+            return TryExtractJsonObject(json) ?? json;
+        }
+
+        return TryExtractJsonObject(json) ?? json;
+    }
+
+    private static string? TryExtractJsonObject(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+
+        var start = text.IndexOf('{');
+        if (start < 0)
+            return null;
+
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+
+        for (var i = start; i < text.Length; i++)
+        {
+            var ch = text[i];
+
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (ch == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                inString = !inString;
+                continue;
+            }
+
+            if (inString)
+                continue;
+
+            if (ch == '{')
+                depth++;
+            else if (ch == '}')
+                depth--;
+
+            if (depth == 0)
+                return text[start..(i + 1)];
+        }
+
+        return null;
     }
 
     private static DecisionV2Result ParseDecisionResult(JsonElement root)
@@ -236,5 +297,16 @@ public sealed class OllamaLlmClient : ILlmClient
         }
 
         return new List<string>();
+    }
+
+    private static DecisionV2Result SafeDecisionResult(string rationale)
+    {
+        return new DecisionV2Result
+        {
+            Reply = string.Empty,
+            Confidence = 0.0,
+            Rationale = rationale,
+            Alternatives = new List<string>()
+        };
     }
 }

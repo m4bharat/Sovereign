@@ -248,7 +248,8 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         {
             "trade-off", "second-order", "second order", "downstream",
             "constraint", "bottleneck", "coordination", "the real challenge",
-            "what changes", "where it gets hard", "in practice", "the risk is"
+            "what changes", "where it gets hard", "in practice", "the risk is",
+            "operational layer", "portability", "governance", "most teams underestimate"
         };
 
         return insightMarkers.Any(m => text.Contains(m)) ||

@@ -43,7 +43,7 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
             return new SocialSituation { Type = "defer_no_reply", Confidence = 0.95, Signals = new[] { "explicit defer" } };
         }
 
-        if (ContainsAny(source, "controversial", "disagree", "hate", "worst", "terrible", "disaster", "fail") || 
+        if (ContainsAny(source, "controversial", "disagree", "hate", "worst", "terrible", "disaster") || 
             Regex.IsMatch(source, @"\b(woke|wokeism|pronouns|politic|election|trump|biden|climate hoax)\b"))
         {
             return new SocialSituation { Type = "controversial_no_reply", Confidence = 0.92, Signals = new[] { "high risk controversy" } };
@@ -60,7 +60,22 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
             return new SocialSituation { Type = "holiday_greeting", Confidence = 0.95, Signals = new[] { "seasonal greeting" } };
         }
 
-        if (ContainsAny(source, "team update", "group announcement", "we're hiring", "quarterly", "financial update", "product launch"))
+        if (Regex.IsMatch(source, @"(?:happy birthday|happy belated birthday|many happy returns)", RegexOptions.IgnoreCase))
+        {
+            return new SocialSituation { Type = "holiday_greeting", Confidence = 0.94, Signals = new[] { "birthday greeting" } };
+        }
+
+        if (Regex.IsMatch(source, @"(?:hope you're doing well|hope you are doing well|good morning|good afternoon|good evening|hey\b|hello\b)", RegexOptions.IgnoreCase))
+        {
+            return new SocialSituation { Type = "greeting", Confidence = 0.91, Signals = new[] { "greeting or friendly opener" } };
+        }
+
+        if (ContainsAny(source, "we launched", "just launched", "launched", "launching", "released", "shipped"))
+        {
+            return new SocialSituation { Type = "achievement_share", Confidence = 0.92, Signals = new[] { "launch milestone" } };
+        }
+
+        if (ContainsAny(source, "team update", "group announcement", "we're hiring", "we are hiring", "quarterly", "financial update", "product launch"))
         {
             return new SocialSituation { Type = "group_announcement", Confidence = 0.90, Signals = new[] { "org/team broadcast" } };
         }
@@ -72,7 +87,7 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
 
         if (ContainsAny(source, "funding", "raised", "series a", "series b", "investment", "backers", "thrilled to announce"))
         {
-            return new SocialSituation { Type = "industry_news", Confidence = 0.88, Signals = new[] { "company milestone" } };
+            return new SocialSituation { Type = "achievement_share", Confidence = 0.90, Signals = new[] { "company milestone" } };
         }
 
         if (ContainsAny(source, "reflecting", "gratitude", "connections", "past year", "it's been"))
@@ -80,10 +95,31 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
             return new SocialSituation { Type = "relationship_preservation", Confidence = 0.85, Signals = new[] { "rm maintenance" } };
         }
 
-        // Priority 3: CTA
+        // Priority 3: CTA and direct questions
         if (Regex.IsMatch(source, @"(?:drop in comments|comment below|share your|let me know|tell me|which one|what's your|your thoughts?|your take)", RegexOptions.IgnoreCase))
         {
             return new SocialSituation { Type = "cta_engagement", Confidence = 0.92, Signals = new[] { "explicit CTA" } };
+        }
+
+        if (Regex.IsMatch(source, @"^(how|what|why|when|where)\b", RegexOptions.IgnoreCase))
+        {
+            return new SocialSituation { Type = "question", Confidence = 0.90, Signals = new[] { "direct question" } };
+        }
+
+        if (ContainsAny(source,
+                "anthropic blocked",
+                "provider",
+                "multi model",
+                "multimodel",
+                "architecture",
+                "resilience",
+                "routing",
+                "prompt portability",
+                "agentic",
+                "workflow",
+                "production grade"))
+        {
+            return new SocialSituation { Type = "industry_news", Confidence = 0.90, Signals = new[] { "technical thought leadership" } };
         }
 
         // Priority 4: Personal update
@@ -128,17 +164,19 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
         }
 
         if (string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) &&
-            context.InteractionMetadata != null &&
-            context.InteractionMetadata.TryGetValue("rewrite_intent", out var rewriteIntent) &&
-            bool.TryParse(rewriteIntent, out var isRewriteIntent) &&
-            isRewriteIntent)
+            !string.IsNullOrWhiteSpace(context.Message) &&
+            !IsCommandOnlyMessage(context.Message))
         {
             return new SocialSituation
             {
                 Type = "rewrite_direct_message",
-                Summary = "The user gave a rough chat intent that should be rewritten into a natural DM."
+                Summary = "The user provided a draft direct message to rewrite."
             };
         }
+
+        var specific = DetectSpecificSituations(context);
+        if (specific != null)
+            return specific;
 
         if ((context.InteractionMode ?? string.Empty).Equals("chat", StringComparison.OrdinalIgnoreCase))
         {
@@ -148,10 +186,6 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
                 Summary = "This is a messaging/chat interaction that should sound natural and direct."
             };
         }
-
-        var specific = DetectSpecificSituations(context);
-        if (specific != null)
-            return specific;
 
         var source = string.Join(" ",
                 context.SourceTitle ?? string.Empty,
@@ -196,7 +230,8 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
         if (ContainsAny(source,
                 "what is", "pattern", "architecture", "key takeaway", "example",
                 "why use", "types of", "implementation", "real-world example",
-                "breakdown", "understanding", "microservices", "system design"))
+                "breakdown", "understanding", "microservices", "system design",
+                "ways to improve", "tips to", "how to improve", "performance in production"))
         {
             return new SocialSituation
             {
@@ -206,7 +241,7 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
             };
         }
 
-        if (ContainsAny(source, "i believe", "i think", "in my view", "the key is", "important", "should"))
+        if (ContainsAny(source, "i believe", "i think", "in my view", "the key is", "important", "should", "the best", "the real"))
         {
             return new SocialSituation
             {
@@ -262,7 +297,7 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
 
         if (ContainsAny(source,
                 "reflecting on", "past year", "career journey", "looking back",
-                "grateful for connections", "it's been"))
+                "grateful for connections", "it's been", "things i learned", "lessons learned", "first year as manager"))
         {
             return new SocialSituation
             {
@@ -274,7 +309,7 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
 
         if (ContainsAny(source,
                 "personal challenges", "tough time", "health issues", "difficult",
-                "appreciate sensitivity", "please be sensitive"))
+                "appreciate sensitivity", "please be sensitive", "laid off", "layoff"))
         {
             return new SocialSituation
             {
@@ -326,7 +361,7 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
         // Legacy greeting deprecated
 
         if (ContainsAny(source,
-                "good morning", "good afternoon", "good evening", "have a great day", "hope you're well", "hope this finds you well", "morning everyone", "evening everyone"))
+                "good morning", "good afternoon", "good evening", "have a great day", "hope you're well", "hope this finds you well", "morning everyone", "evening everyone", "meme", "motivation monday", "low substance"))
         {
             return new SocialSituation
             {

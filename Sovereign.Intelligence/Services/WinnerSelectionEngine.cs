@@ -54,7 +54,10 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
         }
 
         var situationType = (situation.Type ?? string.Empty).Trim().ToLowerInvariant();
-        var preferredFamilies = GetPreferredMoveFamilies(situationType);
+        var preferredFamilies = AdjustPreferredFamiliesForContext(
+            GetPreferredMoveFamilies(situationType),
+            situationType,
+            context);
         var isExplicitNoReply = IsExplicitNoReplySituation(situationType);
 
         var qualified = scores
@@ -92,10 +95,10 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
 
         if (preferred.Count > 0)
         {
-            return PickBest(preferred);
+            return PickBest(preferred, preferredFamilies);
         }
 
-        return PickBest(qualified);
+        return PickBest(qualified, preferredFamilies);
     }
 
     private static IReadOnlyList<SocialMoveCandidate> BuildAlternatives(
@@ -109,7 +112,10 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
 
         var situationType = (situation.Type ?? string.Empty).Trim().ToLowerInvariant();
         var isExplicitNoReply = IsExplicitNoReplySituation(situationType);
-        var preferredFamilies = GetPreferredMoveFamilies(situationType);
+        var preferredFamilies = AdjustPreferredFamiliesForContext(
+            GetPreferredMoveFamilies(situationType),
+            situationType,
+            context);
 
         var alternatives = scores
             .Where(s => !ReferenceEquals(s, winner))
@@ -117,7 +123,7 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
                         !string.Equals(s.Candidate.Reply, winner.Candidate.Reply, StringComparison.Ordinal))
             .Where(IsQualified)
             .Where(s => isExplicitNoReply || !IsNoReply(s))
-            .OrderByDescending(s => IsPreferredFamily(s, preferredFamilies))
+            .OrderBy(s => GetFamilyPriorityIndex(s, preferredFamilies))
             .ThenByDescending(s => s.ComputedTotal)
             .Take(2)
             .Select(s => s.Candidate)
@@ -160,6 +166,31 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
             "update" => new[] { "acknowledge", "appreciate" },
             _ => new[] { "engage", "appreciate", "light_touch", "add_insight" }
         };
+    }
+
+    private static string[] AdjustPreferredFamiliesForContext(
+        string[] preferredFamilies,
+        string situationType,
+        MessageContext context)
+    {
+        if (!string.Equals(situationType, "achievement_share", StringComparison.OrdinalIgnoreCase))
+            return preferredFamilies;
+
+        var source = string.Join(" ",
+            context.SourceTitle ?? string.Empty,
+            context.SourceText ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty);
+
+        if (source.Contains("launched", StringComparison.OrdinalIgnoreCase) ||
+            source.Contains("launch", StringComparison.OrdinalIgnoreCase) ||
+            source.Contains("released", StringComparison.OrdinalIgnoreCase) ||
+            source.Contains("shipped", StringComparison.OrdinalIgnoreCase))
+        {
+            return new[] { "praise", "congratulate", "congratulate_encourage" };
+        }
+
+        return preferredFamilies;
     }
 
     private static bool IsExplicitNoReplySituation(string situationType)
@@ -217,10 +248,11 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
         return HasUsableReply(score);
     }
 
-    private static CandidateScore PickBest(IEnumerable<CandidateScore> scores)
+    private static CandidateScore PickBest(IEnumerable<CandidateScore> scores, string[] preferredFamilies)
     {
         return scores
-            .OrderByDescending(s => s.ComputedTotal)
+            .OrderBy(s => GetFamilyPriorityIndex(s, preferredFamilies))
+            .ThenByDescending(s => s.ComputedTotal)
             .ThenByDescending(s => s.FamilyMatchBoost)
             .ThenByDescending(s => s.Specificity)
             .ThenByDescending(s => s.Relevance)
@@ -231,6 +263,17 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
             .ThenBy(s => s.GenericPraisePenalty)
             .ThenBy(s => s.EngagementCost)
             .First();
+    }
+
+    private static int GetFamilyPriorityIndex(CandidateScore score, string[] preferredFamilies)
+    {
+        for (var i = 0; i < preferredFamilies.Length; i++)
+        {
+            if (string.Equals(score.Candidate.Move, preferredFamilies[i], StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+
+        return int.MaxValue;
     }
 
     private static CandidateScore BuildFallback(
