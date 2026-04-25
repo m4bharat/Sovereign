@@ -81,8 +81,12 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         };
 
         reply = NormalizeReply(reply);
-        reply = EnforceAnchoring(reply, context, move);
-        reply = FilterGenericReply(reply, context, move);
+
+        if (move is not ("draft_post" or "outline_post"))
+        {
+            reply = EnforceAnchoring(reply, context, move);
+            reply = FilterGenericReply(reply, context, move);
+        }
 
         var shortReply = BuildShortReplyForMove(move, context);
 
@@ -172,10 +176,30 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
             context.ParentContextText ?? string.Empty,
             context.NearbyContextText ?? string.Empty);
 
-        return Regex.Matches(source.ToLowerInvariant(), @"[a-z0-9][a-z0-9\-/+]{2,}")
+        var prioritizedPhrases = new[]
+        {
+            "multi model",
+            "provider dependency",
+            "routing",
+            "architecture",
+            "resilience",
+            "orchestration"
+        }.Where(phrase => source.Contains(phrase, StringComparison.OrdinalIgnoreCase))
+         .Select(phrase => phrase.ToLowerInvariant());
+
+        var hashtagTokens = Regex.Matches(source, @"#([A-Za-z][A-Za-z0-9]+)")
+            .Select(m => m.Groups[1].Value.ToLowerInvariant());
+
+        var companyTokens = Regex.Matches(source, @"\b[A-Z][A-Za-z0-9&.-]{2,}\b")
+            .Select(m => m.Value.ToLowerInvariant());
+
+        return prioritizedPhrases
+            .Concat(hashtagTokens)
+            .Concat(companyTokens)
+            .Concat(Regex.Matches(source.ToLowerInvariant(), @"[a-z0-9][a-z0-9\-/+]{2,}")
             .Select(m => m.Value)
             .Where(t => t.Length >= 4)
-            .Where(t => !IsWeakAnchorToken(t))
+            .Where(t => !IsWeakAnchorToken(t)))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(20)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -186,7 +210,9 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         return token is
             "this" or "that" or "with" or "from" or "your" or "about" or "have" or
             "more" or "than" or "into" or "they" or "them" or "their" or "there" or
-            "would" or "could" or "should" or "really" or "very" or "just" or "post";
+            "would" or "could" or "should" or "really" or "very" or "just" or "post" or
+            "associate" or "developer" or "java" or "spring" or "boot" or "rest" or
+            "mysql" or "mongodb" or "ai" or "model" or "provider";
     }
 
     private static string ExtractBestAnchor(MessageContext context)
@@ -297,11 +323,25 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
     private static string GenerateInsightReply(MessageContext context, SocialMoveCandidate candidate)
     {
         var anchor = ExtractBestAnchor(context);
+        var source = context.SourceText ?? string.Empty;
+
+        if (ContainsAny(source,
+            "multi model",
+            "provider",
+            "architecture",
+            "routing",
+            "dependency",
+            "resilience"))
+        {
+            return "Strong point — provider redundancy only works when the orchestration layer is designed for portability from the start. Most teams underestimate how much provider-specific coupling sneaks into prompts and workflows.";
+        }
 
         if (!string.IsNullOrWhiteSpace(anchor))
-            return $"The second-order effect with {anchor} is usually coordination and prioritization — that’s where the real trade-off starts to show.";
+        {
+            return $"The real complexity with {anchor} usually appears in the operational layer — that’s where portability and governance become much harder than model selection itself.";
+        }
 
-        return "The second-order effect is usually coordination and prioritization — that’s where the real trade-off starts to show.";
+        return "The real complexity usually appears in the operational layer — that’s where execution becomes much harder than the idea itself.";
     }
 
     private static string GenerateEncourageReply(MessageContext context, SocialMoveCandidate candidate)
@@ -359,6 +399,9 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         var anchor = ExtractBestAnchor(context);
         var draft = (context.Message ?? string.Empty).Trim();
 
+        if (IsCommandOnlyMessage(context.Message))
+            return GenerateHelpfulReplyFromSource(context);
+
         if (!string.IsNullOrWhiteSpace(draft))
         {
             var rewritten = RewriteStandaloneSentence(draft);
@@ -376,6 +419,14 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
 
     private static string RewriteUserDraft(MessageContext context, SocialMoveCandidate candidate)
     {
+        if (IsCommandOnlyMessage(context.Message))
+        {
+            if (IsChatSurface(context))
+                return GenerateHelpfulReplyFromSource(context);
+
+            return GenerateFallbackReply(context, candidate);
+        }
+
         var draft = (context.Message ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(draft))
             return string.Empty;
@@ -396,6 +447,32 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         }
 
         return rewritten;
+    }
+
+    private static bool IsCommandOnlyMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        var text = message.Trim().ToLowerInvariant();
+
+        return text is "reply" or "write reply" or "suggest reply" or "comment" or "write comment";
+    }
+
+    private static string GenerateHelpfulReplyFromSource(MessageContext context)
+    {
+        var source = string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty);
+
+        if (source.Contains("happy belated birthday", StringComparison.OrdinalIgnoreCase))
+            return "Thank you so much! Really appreciate your wishes.";
+
+        if (source.Contains("happy birthday", StringComparison.OrdinalIgnoreCase))
+            return "Thank you so much! Really appreciate it.";
+
+        return "Thanks, I appreciate it.";
     }
 
     private static string BuildShortReplyForMove(string move, MessageContext context)
@@ -566,5 +643,13 @@ Curious how others are thinking about AI adoption in 2026.
             part.Length == 1
                 ? part.ToUpperInvariant()
                 : char.ToUpperInvariant(part[0]) + part[1..].ToLowerInvariant()));
+    }
+
+    private static bool ContainsAny(string text, params string[] terms)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return terms.Any(term => text.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 }

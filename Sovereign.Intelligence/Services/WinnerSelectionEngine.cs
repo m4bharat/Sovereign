@@ -132,7 +132,7 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
 
         return situationType switch
         {
-            "achievement_share" => new[] { "praise", "congratulate" },
+            "achievement_share" => new[] { "congratulate", "praise", "congratulate_encourage" },
             "personal_update" => new[] { "congratulate", "congratulate_encourage", "encourage" },
             "industry_news" => new[] { "add_insight", "add_specific_insight", "ask_relevant_question" },
             "group_announcement" => new[] { "acknowledge", "appreciate" },

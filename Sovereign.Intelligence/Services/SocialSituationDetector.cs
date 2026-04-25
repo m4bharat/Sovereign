@@ -8,9 +8,34 @@ namespace Sovereign.Intelligence.Services;
 
 public sealed class SocialSituationDetector : ISocialSituationDetector
 {
+    private static bool IsCommandOnlyMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        var text = message.Trim().ToLowerInvariant();
+
+        return text is
+            "reply" or
+            "write reply" or
+            "suggest reply" or
+            "make a reply" or
+            "comment" or
+            "write comment" or
+            "make a comment" or
+            "suggest comment" or
+            "add comment";
+    }
+
     private SocialSituation DetectSpecificSituations(MessageContext context)
     {
-        var source = (context.SourceText ?? string.Empty).Trim().ToLowerInvariant();
+        var source = string.Join(" ",
+                context.SourceTitle ?? string.Empty,
+                context.SourceText ?? string.Empty,
+                context.ParentContextText ?? string.Empty,
+                context.NearbyContextText ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
 
         // Priority 1: Defer/No-Reply (highest confidence, block others)
         if (ContainsAny(source, "reply later", "i'll reply later", "will reply later", "respond later", "reply when i", "more details soon"))
@@ -92,15 +117,15 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
 
         if (string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(context.Message) &&
-            context.Message.Trim().Length <= 30 &&
-            !string.IsNullOrWhiteSpace(context.SourceText))
-                {
-                    return new SocialSituation
-                    {
-                        Type = "rewrite_feed_reply",
-                        Summary = "The user provided a rough draft for a feed reply that should be rewritten into a specific comment."
-                    };
-                }
+            !IsCommandOnlyMessage(context.Message))
+        {
+            return new SocialSituation
+            {
+                Type = "rewrite_feed_reply",
+                Confidence = 0.95,
+                Summary = "User provided a draft feed reply to rewrite."
+            };
+        }
 
         if (string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) &&
             context.InteractionMetadata != null &&
@@ -128,7 +153,29 @@ public sealed class SocialSituationDetector : ISocialSituationDetector
         if (specific != null)
             return specific;
 
-        var source = context.SourceText ?? string.Empty;
+        var source = string.Join(" ",
+                context.SourceTitle ?? string.Empty,
+                context.SourceText ?? string.Empty,
+                context.ParentContextText ?? string.Empty,
+                context.NearbyContextText ?? string.Empty)
+            .ToLowerInvariant();
+
+        if (source.Contains("joined ") ||
+            source.Contains("happy to share") ||
+            source.Contains("new chapter") ||
+            source.Contains("new role") ||
+            source.Contains("new position") ||
+            source.Contains("first linkedin post") ||
+            source.Contains("grateful for the opportunity") ||
+            source.Contains("looking forward to the journey"))
+        {
+            return new SocialSituation
+            {
+                Type = "achievement_share",
+                Confidence = 0.96,
+                Summary = "Detected job/milestone announcement."
+            };
+        }
 
         if (ContainsAny(source,
                 "joined", "joining", "new role", "new chapter", "excited to share",

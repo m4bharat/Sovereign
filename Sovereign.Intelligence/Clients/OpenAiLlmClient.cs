@@ -87,15 +87,7 @@ public sealed class OpenAiLlmClient : ILlmClient
 
             var json = await response.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            return new DecisionV2Result
-            {
-                Reply = root.GetProperty("reply").GetString() ?? string.Empty,
-                Confidence = root.GetProperty("confidence").GetDouble(),
-                Rationale = root.GetProperty("brief_rationale").GetString() ?? string.Empty,
-                Alternatives = root.GetProperty("alternative_rewrites").EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToList()
-            };
+            return ParseDecisionResult(doc.RootElement);
         }
 
         throw new InvalidOperationException("OpenAI request failed unexpectedly.");
@@ -155,5 +147,60 @@ public sealed class OpenAiLlmClient : ILlmClient
         {
             yield return await reader.ReadLineAsync();
         }
+    }
+
+    private static DecisionV2Result ParseDecisionResult(JsonElement root)
+    {
+        var reply = TryGetString(root, "reply", "message", "content");
+        var confidence = TryGetDouble(root, "confidence");
+        var rationale = TryGetString(root, "brief_rationale", "rationale", "reason");
+        var alternatives = TryGetStringArray(root, "alternative_rewrites", "alternatives");
+
+        return new DecisionV2Result
+        {
+            Reply = reply,
+            Confidence = confidence,
+            Rationale = rationale,
+            Alternatives = alternatives
+        };
+    }
+
+    private static string TryGetString(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String)
+                return property.GetString() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private static double TryGetDouble(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out var property) && property.TryGetDouble(out var value))
+                return value;
+        }
+
+        return 0.0;
+    }
+
+    private static List<string> TryGetStringArray(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Array)
+            {
+                return property
+                    .EnumerateArray()
+                    .Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() ?? string.Empty : string.Empty)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .ToList();
+            }
+        }
+
+        return new List<string>();
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,8 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
     private readonly IConversationContextAssembler _contextAssembler;
     private readonly IRelationshipIntelligenceEngine _relationshipIntelligenceEngine;
     private readonly ISocialSituationDetector _socialSituationDetector;
+    private readonly IAiSituationClassifier _aiSituationClassifier;
+    private readonly IAiInsightExpansionService _aiInsightExpansionService;
     private readonly ISocialMovePlanner _socialMovePlanner;
     private readonly ICandidateReplyGenerator _candidateReplyGenerator;
     private readonly ICandidateScoringEngine _candidateScoringEngine;
@@ -31,6 +34,8 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         IConversationContextAssembler contextAssembler,
         IRelationshipIntelligenceEngine relationshipIntelligenceEngine,
         ISocialSituationDetector socialSituationDetector,
+        IAiSituationClassifier aiSituationClassifier,
+        IAiInsightExpansionService aiInsightExpansionService,
         ISocialMovePlanner socialMovePlanner,
         ICandidateReplyGenerator candidateReplyGenerator,
         ICandidateScoringEngine candidateScoringEngine,
@@ -41,12 +46,39 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         _contextAssembler = contextAssembler;
         _relationshipIntelligenceEngine = relationshipIntelligenceEngine;
         _socialSituationDetector = socialSituationDetector;
+        _aiSituationClassifier = aiSituationClassifier;
+        _aiInsightExpansionService = aiInsightExpansionService;
         _socialMovePlanner = socialMovePlanner;
         _candidateReplyGenerator = candidateReplyGenerator;
         _candidateScoringEngine = candidateScoringEngine;
         _winnerSelectionEngine = winnerSelectionEngine;
         _llmClient = llmClient;
         _logger = logger;
+    }
+
+    public DecisionEngineV2(
+        IConversationContextAssembler contextAssembler,
+        IRelationshipIntelligenceEngine relationshipIntelligenceEngine,
+        ISocialSituationDetector socialSituationDetector,
+        ISocialMovePlanner socialMovePlanner,
+        ICandidateReplyGenerator candidateReplyGenerator,
+        ICandidateScoringEngine candidateScoringEngine,
+        IWinnerSelectionEngine winnerSelectionEngine,
+        ILlmClient llmClient,
+        ILogger<DecisionEngineV2> logger)
+        : this(
+            contextAssembler,
+            relationshipIntelligenceEngine,
+            socialSituationDetector,
+            new NullAiSituationClassifier(),
+            new NullAiInsightExpansionService(),
+            socialMovePlanner,
+            candidateReplyGenerator,
+            candidateScoringEngine,
+            winnerSelectionEngine,
+            llmClient,
+            logger)
+    {
     }
 
     public async Task<DecisionV2Result> DecideAsync(
@@ -89,6 +121,25 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         messageContext = MergeDerivedSignals(messageContext, relationshipAnalysis);
 
         var situation = _socialSituationDetector.Detect(messageContext);
+
+        if (ShouldUseAiClassifier(messageContext, situation))
+        {
+            var aiClassification = await _aiSituationClassifier.ClassifyAsync(
+                messageContext,
+                cancellationToken);
+
+            if (aiClassification is not null &&
+                aiClassification.Confidence >= 0.80)
+            {
+                situation = new SocialSituation
+                {
+                    Type = aiClassification.SituationType,
+                    Confidence = aiClassification.Confidence,
+                    Summary = aiClassification.Rationale
+                };
+            }
+        }
+
         messageContext = ApplySituation(messageContext, situation);
 
         var moveCandidates = _socialMovePlanner.Plan(situation, relationshipAnalysis);
@@ -130,11 +181,25 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             }
         }
 
-        var polishedWinner = await TryPolishWinner(winner, messageContext, cancellationToken);
+        var expandedInsight = await _aiInsightExpansionService.GenerateInsightCommentAsync(
+            messageContext,
+            winner,
+            cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(expandedInsight))
+        {
+            winner.Reply = expandedInsight;
+        }
+
+        var finalWinner = await TryGenerateFinalWithAi(
+            winner,
+            messageContext,
+            situation,
+            cancellationToken);
 
 
         return BuildDecisionResult(
-                                polishedWinner,
+                                finalWinner,
                                 winnerSelection.Alternatives,
                                 messageContext,
                                 situation);
@@ -228,6 +293,23 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         return "concise_human";
     }
 
+    private static bool ShouldUseAiClassifier(MessageContext context, SocialSituation situation)
+    {
+        var surface = context.Surface?.ToLowerInvariant() ?? string.Empty;
+        var message = context.Message?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        if (surface is "feed_reply" or "messaging_chat" or "start_post")
+            return true;
+
+        if (message is "reply" or "make a comment" or "write comment" or "suggest reply")
+            return true;
+
+        if (situation.Type is "general" or "rewrite_feed_reply" or "rewrite_direct_message")
+            return true;
+
+        return false;
+    }
+
     private static bool ShouldSkipReply(
         SocialMoveCandidate winner,
         bool allowNoReply,
@@ -265,24 +347,127 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
         };
     }
 
-    private async Task<SocialMoveCandidate> TryPolishWinner(
+    private async Task<SocialMoveCandidate> TryGenerateFinalWithAi(
         SocialMoveCandidate winner,
         MessageContext context,
+        SocialSituation situation,
         CancellationToken cancellationToken)
     {
-        if (!winner.RequiresPolish)
+        if (string.Equals(winner.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
+            return winner;
+
+        try
         {
+            var prompt = BuildAiFirstPrompt(winner, context, situation);
+            var result = await _llmClient.CompleteDecisionV2Async(prompt, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(result.Reply))
+            {
+                var aiReply = result.Reply.Trim();
+
+                if (ContainsUnsupportedNumber(aiReply, context))
+                {
+                    _logger.LogWarning("AI reply contained unsupported numeric claim. Falling back.");
+                    return winner;
+                }
+
+                winner.Reply = aiReply;
+                winner.GenerationConfidence = Math.Max(winner.GenerationConfidence, result.Confidence);
+                winner.Alternatives = result.Alternatives ?? winner.Alternatives;
+            }
+
             return winner;
         }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AI-first generation failed. Falling back to deterministic candidate.");
+            return winner;
+        }
+    }
 
-        var prompt = new DecisionV2PromptBuilder().Build(winner, context);
-        var polishedResult = await _llmClient.CompleteDecisionV2Async(prompt, cancellationToken);
+    private static string BuildAiFirstPrompt(
+        SocialMoveCandidate winner,
+        MessageContext context,
+        SocialSituation situation)
+    {
+        var surface = context.Surface ?? string.Empty;
+        var mode = context.InteractionMode ?? string.Empty;
+        var message = context.Message ?? string.Empty;
+        var sourceAuthor = context.SourceAuthor ?? string.Empty;
+        var sourceTitle = context.SourceTitle ?? string.Empty;
+        var sourceText = context.SourceText ?? string.Empty;
+        var parent = context.ParentContextText ?? string.Empty;
+        var nearby = context.NearbyContextText ?? string.Empty;
 
-        winner.Reply = polishedResult.Reply;
-        winner.GenerationConfidence = polishedResult.Confidence;
-        winner.Alternatives = polishedResult.Alternatives;
+        return $$"""
+You are Sovereign, a social intelligence assistant for LinkedIn.
 
-        return winner;
+Return ONLY valid JSON matching:
+{
+  "move": "{{winner.Move}}",
+  "reply": "final user-facing text",
+  "confidence": 0.0,
+  "alternatives": []
+}
+
+Context:
+- Surface: {{surface}}
+- Interaction mode: {{mode}}
+- Situation type: {{situation.Type}}
+- Selected move: {{winner.Move}}
+- User instruction/message: {{message}}
+- Source author: {{sourceAuthor}}
+- Source title: {{sourceTitle}}
+- Source text: {{sourceText}}
+- Parent context: {{parent}}
+- Nearby context: {{nearby}}
+
+Rules:
+1. If Surface is start_post or SituationType is compose_post:
+   - Write a complete LinkedIn post.
+   - Do NOT rewrite the instruction.
+   - Do NOT say "the point around LinkedIn".
+   - Use paragraphs.
+   - Include a strong hook, body, and closing thought.
+   - Hashtags are allowed.
+
+2. If Surface is feed_reply:
+   - Write a concise LinkedIn comment.
+   - Do NOT invent facts, statistics, studies, or numbers.
+   - Use only the provided source text/title/author.
+   - If the user message is just "reply", treat it as a command, not content to rewrite.
+
+3. If Surface is messaging_chat:
+   - Write a natural chat response.
+   - If the user message is "reply", respond to the latest message in SourceText/NearbyContextText.
+   - Do NOT include "Especially around LinkedIn".
+   - Keep it human and direct.
+
+4. Never hallucinate names.
+5. Never use the wrong person name.
+6. Never mention hidden strategy or analysis.
+7. Avoid generic phrases like "great post", "well said", "thanks for sharing".
+8. Preserve the selected move family.
+""";
+    }
+
+    private static bool ContainsUnsupportedNumber(string reply, MessageContext context)
+    {
+        var source = string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.SourceTitle ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty);
+
+        var numbers = Regex.Matches(reply ?? string.Empty, @"\b\d+(\.\d+)?%?\b")
+            .Select(m => m.Value)
+            .Distinct()
+            .ToArray();
+
+        if (numbers.Length == 0)
+            return false;
+
+        return numbers.Any(n => !source.Contains(n, StringComparison.OrdinalIgnoreCase));
     }
 
     private static DecisionV2Result BuildDecisionResult(
@@ -313,5 +498,22 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             SituationType = situation.Type,
             Tone = context.DesiredTone ?? string.Empty
         };
+    }
+
+    private sealed class NullAiSituationClassifier : IAiSituationClassifier
+    {
+        public Task<AiSituationClassification?> ClassifyAsync(
+            MessageContext context,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<AiSituationClassification?>(null);
+    }
+
+    private sealed class NullAiInsightExpansionService : IAiInsightExpansionService
+    {
+        public Task<string?> GenerateInsightCommentAsync(
+            MessageContext context,
+            SocialMoveCandidate candidate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(null);
     }
 }

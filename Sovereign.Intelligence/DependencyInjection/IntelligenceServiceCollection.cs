@@ -20,6 +20,8 @@ public static class IntelligenceServiceCollection
         services.AddSingleton<IInteractionEngine, InteractionEngine>();
         services.AddSingleton<IAIStrategyService, AIStrategyService>();
         services.AddSingleton<ISocialSituationDetector, SocialSituationDetector>();
+        services.AddScoped<IAiSituationClassifier, AiSituationClassifier>();
+        services.AddScoped<IAiInsightExpansionService, AiInsightExpansionService>();
         services.AddSingleton<ISocialMovePlanner, SocialMovePlanner>();
         services.AddSingleton<ICandidateReplyGenerator, CandidateReplyGenerator>();
         services.AddSingleton<ICandidateScoringEngine, CandidateScoringEngine>();

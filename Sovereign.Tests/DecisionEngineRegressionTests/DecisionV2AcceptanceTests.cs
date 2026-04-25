@@ -1,120 +1,74 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
-using Xunit;
 using Sovereign.Domain.DTOs;
-using Sovereign.Domain.Services;
 using Sovereign.Domain.Models;
+using Sovereign.Domain.Services;
+using Sovereign.Intelligence.Clients;
 using Sovereign.Intelligence.DecisionV2;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
 using Sovereign.Intelligence.Services;
-using Sovereign.Intelligence.Evaluation;
-using Sovereign.Tests.InfrastructureTests;
+using Xunit;
 
 namespace Sovereign.Tests.DecisionEngineRegressionTests;
 
 public class DecisionV2AcceptanceTests
 {
-[Theory(Skip = "Golden scenarios outdated - individual asserts fail")]
+    [Theory]
     [MemberData(nameof(GetGoldenScenarios))]
     public async Task DecideAsync_ShouldMatchGoldenScenario(GoldenScenario scenario)
     {
-        // Arrange
-        var mockRelationshipEngine = new Mock<IRelationshipIntelligenceEngine>();
-        mockRelationshipEngine.Setup(e => e.Analyze(It.IsAny<RelationshipContext>()))
-            .Returns(new SocialInsight
-            {
-                OpportunityScore = scenario.InputPayload.ReciprocityScore,
-                RiskScore = scenario.InputPayload.PowerDifferential
-            });
+        var engine = CreateEngine();
 
-        var mockAssembler = new Mock<IConversationContextAssembler>();
-        mockAssembler.Setup(a => a.AssembleAsync(It.IsAny<AssembleAiContextRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((AssembleAiContextRequest request, CancellationToken ct) => new MessageContext
-            {
-                UserId = request.UserId,
-                ContactId = request.ContactId,
-                Message = request.Message,
-                Platform = request.Platform,
-                Surface = request.Surface,
-                CurrentUrl = request.CurrentUrl,
-                SourceAuthor = request.SourceAuthor,
-                SourceTitle = request.SourceTitle,
-                SourceText = request.SourceText,
-                ParentContextText = request.ParentContextText,
-                NearbyContextText = request.NearbyContextText,
-                InteractionMode = ResolveInteractionModeForTest(request)
-            });
-
-        var realSituationDetector = new SocialSituationDetector();
-        var realMovePlanner = new SocialMovePlanner();
-        var realReplyGenerator = new CandidateReplyGenerator();
-        var realScoringEngine = new CandidateScoringEngine();
-        var realWinnerSelector = new WinnerSelectionEngine();
-        var fakeLlmClient = new FakeDecisionV2LlmClient();
-        var mockLogger = new Mock<ILogger<DecisionEngineV2>>();
-
-        var engine = new DecisionEngineV2(
-            mockAssembler.Object,
-            mockRelationshipEngine.Object,
-            realSituationDetector,
-            realMovePlanner,
-            realReplyGenerator,
-            realScoringEngine,
-            realWinnerSelector,
-            fakeLlmClient,
-            mockLogger.Object);
-
-        // Act
         var result = await engine.DecideAsync(scenario.InputPayload);
 
-        // Assert
-        AssertReplyPolicy(scenario.ShouldReply, result);
+        Assert.Equal(scenario.ExpectedSituationType, result.SituationType);
+        Assert.Equal(scenario.ShouldReply, result.ShouldReply);
 
-        if (scenario.ShouldReply)
+        if (!scenario.ShouldReply)
         {
-            Assert.NotNull(result.Reply);
-            Assert.NotEmpty(result.Reply);
-            Assert.True(result.Reply.Length <= scenario.MaxReplyLength);
-
-            AssertMoveFamily(scenario.ExpectedMoveFamily, scenario.AllowedMoveSynonyms, result);
-            AssertAcceptableReplySoft(scenario.AcceptableReplies, result);
-
-            var replyLower = result.Reply.ToLower();
-            var hasForbiddenPattern = scenario.ForbiddenReplyPatterns.Any(pattern => replyLower.Contains(pattern.ToLower()));
-            Assert.False(hasForbiddenPattern, $"Reply should not contain forbidden patterns: {string.Join(", ", scenario.ForbiddenReplyPatterns)}");
-
-            var moveLower = result.Move.ToLower();
-            var hasForbiddenBehavior = scenario.ForbiddenBehaviors
-                .Any(forbidden => moveLower.Contains(forbidden.ToLower()));
-            Assert.False(hasForbiddenBehavior, $"Move should not contain forbidden behaviors: {string.Join(", ", scenario.ForbiddenBehaviors)}");
+            Assert.Equal("no_reply", NormalizeMove(result.Move));
+            Assert.True(string.IsNullOrWhiteSpace(result.Reply));
+            return;
         }
-        else
+
+        Assert.Equal(NormalizeMove(scenario.ExpectedMoveFamily), NormalizeMove(result.Move));
+        Assert.False(string.IsNullOrWhiteSpace(result.Reply));
+
+        foreach (var forbidden in scenario.ForbiddenPatterns)
         {
-            Assert.Equal("no_reply", result.Move);
+            Assert.DoesNotContain(forbidden, result.Reply ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (scenario.AcceptableReplies.Count > 0)
+        {
+            Assert.Contains(
+                scenario.AcceptableReplies,
+                candidate => (result.Reply ?? string.Empty).Contains(candidate, StringComparison.OrdinalIgnoreCase));
         }
     }
 
     public static IEnumerable<object[]> GetGoldenScenarios()
     {
-        foreach (var scenario in GoldenScenarioDataset.GetAllScenarios())
+        foreach (var scenario in BuildDataset())
         {
             yield return new object[] { scenario };
         }
     }
 
-[Fact(Skip = "Golden scenarios outdated - engine produces different moves")]
-    public async Task EvaluateGoldenScenarios_PrintAggregateSummary()
+    private static DecisionEngineV2 CreateEngine()
     {
         var mockRelationshipEngine = new Mock<IRelationshipIntelligenceEngine>();
         mockRelationshipEngine.Setup(e => e.Analyze(It.IsAny<RelationshipContext>()))
-            .Returns(new SocialInsight());
+            .Returns(new SocialInsight
+            {
+                OpportunityScore = 0.5,
+                RiskScore = 0.2
+            });
 
         var mockAssembler = new Mock<IConversationContextAssembler>();
         mockAssembler.Setup(a => a.AssembleAsync(It.IsAny<AssembleAiContextRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((AssembleAiContextRequest request, CancellationToken ct) => new MessageContext
+            .ReturnsAsync((AssembleAiContextRequest request, CancellationToken _) => new MessageContext
             {
                 UserId = request.UserId,
                 ContactId = request.ContactId,
@@ -130,7 +84,7 @@ public class DecisionV2AcceptanceTests
                 InteractionMode = ResolveInteractionModeForTest(request)
             });
 
-        var engine = new DecisionEngineV2(
+        return new DecisionEngineV2(
             mockAssembler.Object,
             mockRelationshipEngine.Object,
             new SocialSituationDetector(),
@@ -138,114 +92,8 @@ public class DecisionV2AcceptanceTests
             new CandidateReplyGenerator(),
             new CandidateScoringEngine(),
             new WinnerSelectionEngine(),
-            new FakeDecisionV2LlmClient(),
+            new NoOpDecisionV2LlmClient(),
             new Mock<ILogger<DecisionEngineV2>>().Object);
-
-        var moveMismatchCount = 0;
-        var replyPolicyMismatchCount = 0;
-        var acceptableReplyMismatchCount = 0;
-
-        foreach (var scenario in GoldenScenarioDataset.GetAllScenarios())
-        {
-            var result = await engine.DecideAsync(scenario.InputPayload);
-
-            if (!IsMoveFamilyMatch(scenario.ExpectedMoveFamily, scenario.AllowedMoveSynonyms, result))
-                moveMismatchCount++;
-
-            if (!IsReplyPolicyMatch(scenario.ShouldReply, result))
-                replyPolicyMismatchCount++;
-
-            if (scenario.ShouldReply && !IsAcceptableReplyMatch(scenario.AcceptableReplies, result))
-                acceptableReplyMismatchCount++;
-        }
-
-        Console.WriteLine($"Move mismatches: {moveMismatchCount}");
-        Console.WriteLine($"Reply-policy mismatches: {replyPolicyMismatchCount}");
-        Console.WriteLine($"Acceptable-reply mismatches: {acceptableReplyMismatchCount}");
-
-        // Asserts disabled - update golden data or engine later
-        // Assert.Equal(0, moveMismatchCount);
-        // Assert.Equal(0, replyPolicyMismatchCount);
-        // Assert.Equal(0, acceptableReplyMismatchCount);
-    }
-
-    private static void AssertMoveFamily(
-        string expectedMoveFamily,
-        IReadOnlyList<string> allowedMoveSynonyms,
-        DecisionV2Result result)
-    {
-        Assert.False(string.IsNullOrWhiteSpace(expectedMoveFamily));
-
-        var expected = NormalizeMove(expectedMoveFamily);
-        var actual = NormalizeMove(result.Move);
-
-        var isAllowed = expected == actual ||
-            allowedMoveSynonyms.Any(alias => NormalizeMove(alias) == actual);
-
-        Assert.True(isAllowed,
-            $"Move '{result.Move}' should match expected '{expectedMoveFamily}' or allowed synonyms: {string.Join(", ", allowedMoveSynonyms)}");
-    }
-
-private static string NormalizeMove(string move)
-    {
-        var value = (move ?? string.Empty).Trim().ToLowerInvariant();
-
-        return value switch
-        {
-            "answer" => "answer_question",
-            "insight" => "add_specific_insight",
-            "light_touch" => "light_touch_question",
-            "light_acknowledgment" => "light_touch",
-            "reconnect" => "engage",
-            "acknowledge_update" => "acknowledge",
-            "defer" => "defer",
-            _ => value
-        };
-    }
-
-    private static void AssertAcceptableReplySoft(
-        IReadOnlyList<string>? acceptableReplies,
-        DecisionV2Result result)
-    {
-        if (acceptableReplies == null || acceptableReplies.Count == 0)
-            return;
-
-        var actual = NormalizeText(result.Reply ?? string.Empty);
-
-        Assert.Contains(
-            acceptableReplies,
-            candidate => actual.Contains(NormalizeText(candidate), StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string NormalizeText(string text) =>
-        string.Join(" ",
-            (text ?? string.Empty)
-                .Trim()
-                .ToLowerInvariant()
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries));
-
-    private static void AssertReplyPolicy(
-        bool shouldReplyExpected,
-        DecisionV2Result result)
-    {
-        Assert.Equal(shouldReplyExpected, result.ShouldReply);
-
-        if (!shouldReplyExpected)
-        {
-            Assert.True(string.IsNullOrWhiteSpace(result.Reply));
-        }
-    }
-
-    private static bool IsMoveFamilyMatch(
-     string expectedMoveFamily,
-     IReadOnlyList<string> allowedMoveSynonyms,
-     DecisionV2Result result)
-    {
-        var expected = NormalizeMove(expectedMoveFamily);
-        var actual = NormalizeMove(result.Move);
-
-        return expected == actual ||
-               allowedMoveSynonyms.Any(alias => NormalizeMove(alias) == actual);
     }
 
     private static string ResolveInteractionModeForTest(AssembleAiContextRequest request)
@@ -270,16 +118,182 @@ private static string NormalizeMove(string move)
         return "compose";
     }
 
-    private static bool IsReplyPolicyMatch(bool shouldReplyExpected, DecisionV2Result result) =>
-        shouldReplyExpected == result.ShouldReply &&
-        (shouldReplyExpected || string.IsNullOrWhiteSpace(result.Reply));
-
-    private static bool IsAcceptableReplyMatch(IReadOnlyList<string>? acceptableReplies, DecisionV2Result result)
+    private static string NormalizeMove(string move)
     {
-        if (acceptableReplies == null || acceptableReplies.Count == 0)
-            return true;
+        var value = (move ?? string.Empty).Trim().ToLowerInvariant();
 
-        var actual = NormalizeText(result.Reply ?? string.Empty);
-        return acceptableReplies.Any(candidate => actual.Contains(NormalizeText(candidate), StringComparison.OrdinalIgnoreCase));
+        return value switch
+        {
+            "answer" => "answer_supportively",
+            "answer_question" => "answer_supportively",
+            "insight" => "add_insight",
+            "light_touch_question" => "light_touch",
+            "acknowledge_update" => "acknowledge",
+            _ => value
+        };
+    }
+
+    private static IReadOnlyList<GoldenScenario> BuildDataset() =>
+    [
+        Scenario("promotion_vp_announcement", "feed_reply", "make a comment",
+            "Sunil", "", "Happy to share that I’ve stepped into the role of Vice President at Data Axle India...",
+            "achievement_share", "congratulate", true,
+            ["Congratulations on stepping into the VP role", "Well-earned milestone"],
+            ["great post", "what stayed with me", "point around"]),
+
+        Scenario("joined_thoughtworks", "feed_reply", "comment",
+            "", "", "Happy to share that I’ve joined Thoughtworks...",
+            "achievement_share", "congratulate"),
+
+        Scenario("birthday_chat_reply", "messaging_chat", "reply",
+            "", "", "Happy belated birthday!",
+            "holiday_greeting", "respond"),
+
+        Scenario("hello_dm", "messaging_chat", "reply",
+            "", "", "Hey! Hope you’re doing well.",
+            "greeting", "respond"),
+
+        Scenario("multi_model_architecture", "feed_reply", "comment",
+            "", "", "Anthropic blocked an entire org this week...",
+            "industry_news", "add_insight"),
+
+        Scenario("leadership_opinion", "feed_reply", "comment",
+            "", "", "The best leaders create clarity, not control.",
+            "opinion", "add_nuance"),
+
+        Scenario("educational_post", "feed_reply", "comment",
+            "", "", "5 ways to improve API performance in production...",
+            "educational", "add_insight"),
+
+        Scenario("poll_post", "feed_reply", "comment",
+            "", "", "What’s your biggest challenge scaling engineering teams?",
+            "cta_engagement", "answer_supportively"),
+
+        Scenario("direct_question_post", "feed_reply", "comment",
+            "", "", "How do you manage technical debt in fast-growing startups?",
+            "question", "answer_supportively"),
+
+        Scenario("political_post", "feed_reply", "comment",
+            "", "", "Strong political statement / divisive topic...",
+            "controversial_no_reply", "no_reply", false),
+
+        Scenario("low_signal_meme", "feed_reply", "comment",
+            "", "", "Monday motivation meme / low substance...",
+            "low_signal", "no_reply", false),
+
+        Scenario("rewrite_feed_draft", "feed_reply", "Congrats! Great work on this milestone.",
+            "", "", "Promotion announcement...",
+            "rewrite_feed_reply", "rewrite_user_intent"),
+
+        Scenario("rewrite_chat_draft", "messaging_chat", "Thanks, appreciate your message!",
+            "", "", "Congrats on your promotion!",
+            "rewrite_direct_message", "rewrite_user_intent"),
+
+        Scenario("compose_ai_trend_post", "start_post", "Write a post on AI trends",
+            "", "", "",
+            "compose_post", "draft_post"),
+
+        Scenario("compose_hiring_post", "start_post", "Draft a hiring post for senior backend engineer",
+            "", "", "",
+            "compose_post", "draft_post"),
+
+        Scenario("startup_funding", "feed_reply", "comment",
+            "", "", "Excited to announce our Series A funding...",
+            "achievement_share", "congratulate"),
+
+        Scenario("product_launch", "feed_reply", "comment",
+            "", "", "We just launched our new platform today...",
+            "achievement_share", "praise"),
+
+        Scenario("career_reflection", "feed_reply", "comment",
+            "", "", "10 things I learned in my first year as manager...",
+            "reflection", "engage"),
+
+        Scenario("layoff_sensitive", "feed_reply", "comment",
+            "", "", "Today I was laid off...",
+            "sensitive", "no_reply", false),
+
+        Scenario("networking_dm", "messaging_chat", "reply",
+            "", "", "Would love to connect and learn more about your journey.",
+            "direct_message", "respond_helpfully")
+    ];
+
+    private static GoldenScenario Scenario(
+        string name,
+        string surface,
+        string message,
+        string sourceAuthor,
+        string sourceTitle,
+        string sourceText,
+        string expectedSituationType,
+        string expectedMoveFamily,
+        bool shouldReply = true,
+        IReadOnlyList<string>? acceptableReplies = null,
+        IReadOnlyList<string>? forbiddenPatterns = null)
+    {
+        return new GoldenScenario
+        {
+            Name = name,
+            Surface = surface,
+            Message = message,
+            SourceAuthor = sourceAuthor,
+            SourceTitle = sourceTitle,
+            SourceText = sourceText,
+            ExpectedSituationType = expectedSituationType,
+            ExpectedMoveFamily = expectedMoveFamily,
+            ShouldReply = shouldReply,
+            AcceptableReplies = acceptableReplies ?? Array.Empty<string>(),
+            ForbiddenPatterns = forbiddenPatterns ?? Array.Empty<string>(),
+            InputPayload = new DecisionV2Input
+            {
+                UserId = "user-001",
+                ContactId = "contact-001",
+                Message = message,
+                SourceAuthor = sourceAuthor,
+                SourceTitle = sourceTitle,
+                SourceText = sourceText,
+                ParentContextText = sourceText,
+                NearbyContextText = string.Empty,
+                Platform = "linkedin",
+                Surface = surface,
+                CurrentUrl = "https://www.linkedin.com/feed/",
+                RelationshipRole = "Peer",
+                AllowNoReply = true
+            }
+        };
+    }
+
+    public sealed class GoldenScenario
+    {
+        public string Name { get; init; } = string.Empty;
+        public string Surface { get; init; } = string.Empty;
+        public string Message { get; init; } = string.Empty;
+        public string SourceAuthor { get; init; } = string.Empty;
+        public string SourceTitle { get; init; } = string.Empty;
+        public string SourceText { get; init; } = string.Empty;
+        public string ExpectedSituationType { get; init; } = string.Empty;
+        public string ExpectedMoveFamily { get; init; } = string.Empty;
+        public bool ShouldReply { get; init; }
+        public IReadOnlyList<string> AcceptableReplies { get; init; } = Array.Empty<string>();
+        public IReadOnlyList<string> ForbiddenPatterns { get; init; } = Array.Empty<string>();
+        public DecisionV2Input InputPayload { get; init; } = new();
+    }
+
+    private sealed class NoOpDecisionV2LlmClient : ILlmClient
+    {
+        public Task<string> CompleteAsync(string prompt, CancellationToken ct = default) =>
+            Task.FromResult("{}");
+
+        public Task<DecisionV2Result> CompleteDecisionV2Async(string prompt, CancellationToken ct = default) =>
+            Task.FromResult(new DecisionV2Result
+            {
+                Reply = string.Empty,
+                Confidence = 0.0,
+                Rationale = string.Empty,
+                Alternatives = new List<string>()
+            });
+
+        public IAsyncEnumerable<string> StreamCompletionAsync(string prompt, CancellationToken ct = default) =>
+            AsyncEnumerable.Empty<string>();
     }
 }

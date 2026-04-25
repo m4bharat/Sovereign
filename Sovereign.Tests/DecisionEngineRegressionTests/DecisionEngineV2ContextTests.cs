@@ -84,7 +84,7 @@ public sealed class DecisionEngineV2ContextTests
                 Arg.Any<RelationshipAnalysis>())
             .Returns(new[] { candidateScore });
 
-        selector.SelectBest(Arg.Any<IReadOnlyList<CandidateScore>>(), Arg.Any<MessageContext>())
+        selector.SelectBest(Arg.Any<IReadOnlyList<CandidateScore>>(), Arg.Any<SocialSituation>(), Arg.Any<MessageContext>())
             .Returns(new WinnerSelectionResult { Winner = move, Alternatives = Array.Empty<SocialMoveCandidate>() });
 
         var sut = new DecisionEngineV2(
@@ -177,7 +177,7 @@ public sealed class DecisionEngineV2ContextTests
                 Arg.Any<RelationshipAnalysis>())
             .Returns(new[] { candidateScore });
 
-        selector.SelectBest(Arg.Any<IReadOnlyList<CandidateScore>>(), Arg.Any<MessageContext>())
+        selector.SelectBest(Arg.Any<IReadOnlyList<CandidateScore>>(), Arg.Any<SocialSituation>(), Arg.Any<MessageContext>())
             .Returns(new WinnerSelectionResult { Winner = move, Alternatives = Array.Empty<SocialMoveCandidate>() });
 
         var sut = new DecisionEngineV2(
