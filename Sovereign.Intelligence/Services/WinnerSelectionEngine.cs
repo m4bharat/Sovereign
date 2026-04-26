@@ -11,13 +11,11 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
         SocialSituation situation,
         MessageContext context)
     {
-        var bestScore = SelectWinnerScore(scores, situation, context);
-        var alternatives = BuildAlternatives(scores, bestScore, situation, context);
-
+        var winner = SelectWinnerScore(scores, situation, context);
         return new WinnerSelectionResult
         {
-            Winner = bestScore.Candidate,
-            Alternatives = alternatives
+            Winner = winner.Candidate,
+            Alternatives = BuildAlternatives(scores, winner, context)
         };
     }
 
@@ -25,12 +23,7 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
         IReadOnlyList<CandidateScore> scores,
         MessageContext context)
     {
-        var situation = new SocialSituation
-        {
-            Type = context.SituationType ?? string.Empty
-        };
-
-        return SelectBest(scores, situation, context);
+        return SelectBest(scores, new SocialSituation { Type = context.SituationType ?? string.Empty }, context);
     }
 
     private static CandidateScore SelectWinnerScore(
@@ -39,286 +32,157 @@ public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
         MessageContext context)
     {
         if (scores == null || scores.Count == 0)
-        {
-            return new CandidateScore
-            {
-                Candidate = new SocialMoveCandidate
-                {
-                    Move = "no_reply",
-                    Reply = string.Empty,
-                    Rationale = "No candidates were available."
-                },
-                ComputedTotal = 0.0,
-                DisqualifiedReason = "no candidates"
-            };
-        }
+            return BuildNoReplyFallback("No candidates were available.");
 
-        var situationType = (situation.Type ?? string.Empty).Trim().ToLowerInvariant();
-        var preferredFamilies = AdjustPreferredFamiliesForContext(
-            GetPreferredMoveFamilies(situationType),
-            situationType,
-            context);
-        var isExplicitNoReply = IsExplicitNoReplySituation(situationType);
-
+        var mustReply = MustReplyForSurface(context);
         var qualified = scores
             .Where(IsQualified)
+            .Where(score => !HasEmptyRequiredReply(score))
+            .OrderByDescending(score => score.ComputedTotal)
             .ToList();
 
-        if (!isExplicitNoReply)
+        if (qualified.Count == 0)
+            return BuildFallback(scores, mustReply);
+
+        if (mustReply)
         {
-            qualified = qualified
-                .Where(s => !IsNoReply(s))
-                .ToList();
+            var bestNonNoReply = qualified
+                .Where(score => !IsNoReply(score))
+                .OrderByDescending(score => score.ComputedTotal)
+                .FirstOrDefault();
+
+            if (bestNonNoReply is not null && bestNonNoReply.ComputedTotal >= 0.45)
+            {
+                qualified = qualified.Where(score => !IsNoReply(score)).ToList();
+            }
         }
 
         if (qualified.Count == 0)
+            return BuildFallback(scores, mustReply);
+
+        var top = qualified[0];
+        if (qualified.Count == 1)
+            return top;
+
+        var runnerUp = qualified[1];
+        var gap = Math.Abs(top.ComputedTotal - runnerUp.ComputedTotal);
+        if (gap < 0.08 && !string.IsNullOrWhiteSpace(context.Message))
         {
-            return BuildFallback(scores, isExplicitNoReply);
+            return CompareByDraftPreference(top, runnerUp) <= 0 ? top : runnerUp;
         }
 
-        if (string.Equals(situation.Type, "compose_post", StringComparison.OrdinalIgnoreCase))
-        {
-            var draftPost = qualified
-                .FirstOrDefault(s =>
-                    string.Equals(
-                        s.Candidate.Move,
-                        "draft_post",
-                        StringComparison.OrdinalIgnoreCase));
-
-            if (draftPost != null)
-                return draftPost;
-        }
-
-        var preferred = qualified
-            .Where(s => IsPreferredFamily(s, preferredFamilies))
-            .ToList();
-
-        if (preferred.Count > 0)
-        {
-            return PickBest(preferred, preferredFamilies);
-        }
-
-        return PickBest(qualified, preferredFamilies);
+        return top;
     }
 
     private static IReadOnlyList<SocialMoveCandidate> BuildAlternatives(
         IReadOnlyList<CandidateScore> scores,
         CandidateScore winner,
-        SocialSituation situation,
         MessageContext context)
-    {
-        if (scores == null || scores.Count == 0)
-            return Array.Empty<SocialMoveCandidate>();
-
-        var situationType = (situation.Type ?? string.Empty).Trim().ToLowerInvariant();
-        var isExplicitNoReply = IsExplicitNoReplySituation(situationType);
-        var preferredFamilies = AdjustPreferredFamiliesForContext(
-            GetPreferredMoveFamilies(situationType),
-            situationType,
-            context);
-
-        var alternatives = scores
-            .Where(s => !ReferenceEquals(s, winner))
-            .Where(s => !string.Equals(s.Candidate.Move, winner.Candidate.Move, StringComparison.OrdinalIgnoreCase) ||
-                        !string.Equals(s.Candidate.Reply, winner.Candidate.Reply, StringComparison.Ordinal))
-            .Where(IsQualified)
-            .Where(s => isExplicitNoReply || !IsNoReply(s))
-            .OrderBy(s => GetFamilyPriorityIndex(s, preferredFamilies))
-            .ThenByDescending(s => s.ComputedTotal)
-            .Take(2)
-            .Select(s => s.Candidate)
-            .ToArray();
-
-        return alternatives;
-    }
-
-    private static string[] GetPreferredMoveFamilies(string situationType)
-    {
-        situationType = (situationType ?? string.Empty).Trim().ToLowerInvariant();
-
-        return situationType switch
-        {
-            "achievement_share" => new[] { "congratulate", "praise", "congratulate_encourage" },
-            "personal_update" => new[] { "congratulate", "congratulate_encourage", "encourage" },
-            "industry_news" => new[] { "add_insight", "add_specific_insight", "ask_relevant_question" },
-            "group_announcement" => new[] { "acknowledge", "appreciate" },
-            "holiday_greeting" => new[] { "respond", "appreciate" },
-            "relationship_preservation" => new[] { "engage", "appreciate", "light_touch" },
-            "job_search" => new[] { "encourage", "congratulate", "offer_support" },
-            "cta_engagement" => new[] { "answer_supportively", "add_specific_insight", "add_insight" },
-            "rewrite_feed_reply" => new[] { "rewrite_user_intent", "light_touch", "add_specific_insight" },
-            "rewrite_direct_message" => new[] { "rewrite_user_intent", "respond_helpfully" },
-            "direct_message" => new[] { "respond_helpfully", "rewrite_user_intent", "acknowledge_and_continue" },
-            "compose_post" => new[] { "draft_post", "rewrite_user_intent", "outline_post" },
-            "defer_no_reply" => new[] { "no_reply" },
-            "controversial_no_reply" => new[] { "no_reply" },
-            "low_signal" => new[] { "no_reply" },
-            "sensitive" => new[] { "no_reply" },
-            "controversial" => new[] { "no_reply" },
-            "milestone" => new[] { "praise", "congratulate", "congratulate_encourage" },
-            "educational" => new[] { "add_insight", "add_specific_insight", "ask_relevant_question", "appreciate" },
-            "opinion" => new[] { "add_nuance", "add_insight", "ask_relevant_question", "agree" },
-            "cta_or_question" => new[] { "answer_supportively", "add_specific_insight", "ask_relevant_question" },
-            "question" => new[] { "answer_supportively", "ask_relevant_question" },
-            "greeting" => new[] { "respond", "appreciate" },
-            "achievement" => new[] { "praise", "congratulate", "appreciate" },
-            "news" => new[] { "add_insight", "ask_relevant_question", "appreciate" },
-            "update" => new[] { "acknowledge", "appreciate" },
-            _ => new[] { "engage", "appreciate", "light_touch", "add_insight" }
-        };
-    }
-
-    private static string[] AdjustPreferredFamiliesForContext(
-        string[] preferredFamilies,
-        string situationType,
-        MessageContext context)
-    {
-        if (!string.Equals(situationType, "achievement_share", StringComparison.OrdinalIgnoreCase))
-            return preferredFamilies;
-
-        var source = string.Join(" ",
-            context.SourceTitle ?? string.Empty,
-            context.SourceText ?? string.Empty,
-            context.ParentContextText ?? string.Empty,
-            context.NearbyContextText ?? string.Empty);
-
-        if (source.Contains("launched", StringComparison.OrdinalIgnoreCase) ||
-            source.Contains("launch", StringComparison.OrdinalIgnoreCase) ||
-            source.Contains("released", StringComparison.OrdinalIgnoreCase) ||
-            source.Contains("shipped", StringComparison.OrdinalIgnoreCase))
-        {
-            return new[] { "praise", "congratulate", "congratulate_encourage" };
-        }
-
-        return preferredFamilies;
-    }
-
-    private static bool IsExplicitNoReplySituation(string situationType)
-    {
-        situationType = (situationType ?? string.Empty).Trim().ToLowerInvariant();
-
-        return situationType is
-            "defer_no_reply" or
-            "controversial_no_reply" or
-            "low_signal" or
-            "sensitive" or
-            "controversial";
-    }
-
-    private static bool IsNoReply(CandidateScore score)
-    {
-        return string.Equals(
-            score.Candidate.Move,
-            "no_reply",
-            StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsPreferredFamily(CandidateScore score, string[] preferredFamilies)
-    {
-        return preferredFamilies.Contains(
-            score.Candidate.Move,
-            StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static bool HasUsableReply(CandidateScore score)
-    {
-        if (IsNoReply(score))
-            return true;
-
-        return !string.IsNullOrWhiteSpace(score.Candidate.Reply);
-    }
-
-    private static bool IsQualified(CandidateScore score)
-    {
-        if (!string.IsNullOrWhiteSpace(score.DisqualifiedReason))
-            return false;
-
-        if (score.ComputedTotal <= 0.0)
-            return false;
-
-        if (score.HallucinationPenalty >= 0.45)
-            return false;
-
-        if (score.GenericPenalty >= 0.60)
-            return false;
-
-        if (score.GenericPraisePenalty >= 0.65)
-            return false;
-
-        return HasUsableReply(score);
-    }
-
-    private static CandidateScore PickBest(IEnumerable<CandidateScore> scores, string[] preferredFamilies)
     {
         return scores
-            .OrderBy(s => GetFamilyPriorityIndex(s, preferredFamilies))
-            .ThenByDescending(s => s.ComputedTotal)
-            .ThenByDescending(s => s.FamilyMatchBoost)
-            .ThenByDescending(s => s.Specificity)
-            .ThenByDescending(s => s.Relevance)
-            .ThenByDescending(s => s.InsightDepth)
-            .ThenByDescending(s => s.CTAResponseQuality)
-            .ThenByDescending(s => s.PositioningStrength)
-            .ThenBy(s => s.GenericPenalty)
-            .ThenBy(s => s.GenericPraisePenalty)
-            .ThenBy(s => s.EngagementCost)
-            .First();
+            .Where(score => !ReferenceEquals(score, winner))
+            .Where(IsQualified)
+            .Where(score => !HasEmptyRequiredReply(score))
+            .Where(score => !MustReplyForSurface(context) || !IsNoReply(score))
+            .OrderByDescending(score => score.ComputedTotal)
+            .Select(score => score.Candidate)
+            .Take(3)
+            .ToArray();
     }
 
-    private static int GetFamilyPriorityIndex(CandidateScore score, string[] preferredFamilies)
+    private static CandidateScore BuildFallback(IReadOnlyList<CandidateScore> scores, bool mustReply)
     {
-        for (var i = 0; i < preferredFamilies.Length; i++)
-        {
-            if (string.Equals(score.Candidate.Move, preferredFamilies[i], StringComparison.OrdinalIgnoreCase))
-                return i;
-        }
-
-        return int.MaxValue;
-    }
-
-    private static CandidateScore BuildFallback(
-        IReadOnlyList<CandidateScore> scores,
-        bool isExplicitNoReply)
-    {
-        if (isExplicitNoReply)
-        {
-            var noReply = scores.FirstOrDefault(IsNoReply);
-
-            if (noReply != null)
-                return noReply;
-
-            return new CandidateScore
-            {
-                Candidate = new SocialMoveCandidate
-                {
-                    Move = "no_reply",
-                    Reply = string.Empty,
-                    Rationale = "Explicit no-reply situation."
-                },
-                ComputedTotal = 0.0,
-                DisqualifiedReason = "explicit no-reply fallback"
-            };
-        }
-
         var bestNonNoReply = scores
-            .Where(s => !IsNoReply(s))
-            .Where(s => !string.IsNullOrWhiteSpace(s.Candidate.Reply))
-            .OrderByDescending(s => s.ComputedTotal)
+            .Where(score => !IsNoReply(score))
+            .Where(score => !HasEmptyRequiredReply(score))
+            .OrderByDescending(score => score.ComputedTotal)
             .FirstOrDefault();
 
-        if (bestNonNoReply != null)
+        if (bestNonNoReply is not null)
             return bestNonNoReply;
+
+        if (!mustReply)
+            return BuildNoReplyFallback("No candidate met the minimum threshold.");
 
         return new CandidateScore
         {
             Candidate = new SocialMoveCandidate
             {
-                Move = "light_touch",
-                Reply = "There’s a clear signal here worth engaging with.",
-                Rationale = "Safe non-empty fallback because no qualified candidate survived."
+                Move = "rewrite_user_intent",
+                Reply = "Thanks, I appreciate it.",
+                Rationale = "Safe rewrite fallback because the required-reply surface had no qualified winner."
             },
-            ComputedTotal = 0.01,
-            DisqualifiedReason = "non-empty fallback"
+            ComputedTotal = 0.45
+        };
+    }
+
+    private static CandidateScore BuildNoReplyFallback(string rationale)
+    {
+        return new CandidateScore
+        {
+            Candidate = new SocialMoveCandidate
+            {
+                Move = "no_reply",
+                Reply = string.Empty,
+                Rationale = rationale
+            },
+            ComputedTotal = 0.0
+        };
+    }
+
+    private static bool IsQualified(CandidateScore score)
+    {
+        return score is not null &&
+               string.IsNullOrWhiteSpace(score.DisqualifiedReason) &&
+               score.ComputedTotal > 0.0 &&
+               score.HallucinationPenalty < 0.45 &&
+               score.GenericPenalty < 0.60;
+    }
+
+    private static bool HasEmptyRequiredReply(CandidateScore score)
+    {
+        return !IsNoReply(score) && string.IsNullOrWhiteSpace(score.Candidate.Reply);
+    }
+
+    private static bool IsNoReply(CandidateScore score)
+    {
+        return string.Equals(score.Candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CompareByDraftPreference(CandidateScore left, CandidateScore right)
+    {
+        return GetDraftPriority(left.Candidate.Move).CompareTo(GetDraftPriority(right.Candidate.Move));
+    }
+
+    private static int GetDraftPriority(string? move)
+    {
+        var normalized = (move ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "rewrite_user_intent" or "rewrite" or "polish" or "improve_draft" => 0,
+            "helpful_reply" or "respond_helpfully" or "reply" or "answer_supportively" or "add_insight" or "add_specific_insight" or "acknowledge" or "appreciate" or "praise" or "congratulate" => 1,
+            "draft_post" or "compose_post" or "create_post" => 2,
+            "no_reply" => 3,
+            _ => 2
+        };
+    }
+
+    private static bool MustReplyForSurface(MessageContext context)
+    {
+        var surface = (context.Surface ?? string.Empty).Trim().ToLowerInvariant();
+        var hasMessage = !string.IsNullOrWhiteSpace(context.Message);
+        var hasSourceText = !string.IsNullOrWhiteSpace(context.SourceText);
+        var allowNoReply = context.InteractionMetadata is not null &&
+                           context.InteractionMetadata.TryGetValue("allow_no_reply", out var raw) &&
+                           bool.TryParse(raw, out var parsed) &&
+                           parsed;
+
+        return surface switch
+        {
+            "feed_reply" => hasMessage && hasSourceText,
+            "start_post" => hasMessage,
+            "messaging_chat" => hasMessage && !allowNoReply,
+            _ => false
         };
     }
 }

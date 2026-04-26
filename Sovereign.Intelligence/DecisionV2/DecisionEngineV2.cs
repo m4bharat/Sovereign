@@ -163,6 +163,18 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
                              .Where(c => !string.IsNullOrWhiteSpace(c.Reply) || c.Move == "no_reply")
                              .ToList();
 
+        if (MustReplyForSurface(messageContext))
+        {
+            replyCandidates = replyCandidates
+                .Where(candidate => !string.Equals(candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (replyCandidates.Count == 0)
+            {
+                replyCandidates.Add(BuildRequiredSurfaceFallbackCandidate(messageContext));
+            }
+        }
+
         var scoredCandidates = _candidateScoringEngine.Score(
             replyCandidates,
             situation,
@@ -370,6 +382,105 @@ public sealed class DecisionEngineV2 : IDecisionEngineV2
             return false;
 
         return winner.Move == "no_reply" || winner.RiskScore > 0.8;
+    }
+
+    private static bool MustReplyForSurface(MessageContext context)
+    {
+        var surface = (context.Surface ?? string.Empty).Trim().ToLowerInvariant();
+        var hasMessage = !string.IsNullOrWhiteSpace(context.Message);
+        var hasSourceText = !string.IsNullOrWhiteSpace(context.SourceText);
+        var allowNoReply = TryGetAllowNoReply(context);
+
+        return surface switch
+        {
+            "feed_reply" => hasMessage && hasSourceText,
+            "start_post" => hasMessage,
+            "messaging_chat" => hasMessage && !allowNoReply,
+            _ => false
+        };
+    }
+
+    private static bool TryGetAllowNoReply(MessageContext context)
+    {
+        return context.InteractionMetadata is not null &&
+               context.InteractionMetadata.TryGetValue("allow_no_reply", out var raw) &&
+               bool.TryParse(raw, out var parsed) &&
+               parsed;
+    }
+
+    private static SocialMoveCandidate BuildRequiredSurfaceFallbackCandidate(MessageContext context)
+    {
+        var surface = (context.Surface ?? string.Empty).Trim().ToLowerInvariant();
+        var reply = BuildRequiredSurfaceFallbackReply(context);
+        var move = surface == "feed_reply" ? "helpful_reply" : "rewrite_user_intent";
+
+        return new SocialMoveCandidate
+        {
+            Move = move,
+            Reply = reply,
+            ShortReply = reply,
+            Rationale = "Safe required-surface fallback candidate.",
+            GenerationConfidence = 0.55,
+            RequiresPolish = true
+        };
+    }
+
+    private static string BuildRequiredSurfaceFallbackReply(MessageContext context)
+    {
+        var surface = (context.Surface ?? string.Empty).Trim().ToLowerInvariant();
+        var message = (context.Message ?? string.Empty).Trim();
+        var sourceText = (context.SourceText ?? string.Empty).Trim();
+
+        if (surface == "start_post")
+        {
+            return BuildSafeFallbackReply(
+                new SocialMoveCandidate { Move = "rewrite_user_intent" },
+                context,
+                new SocialSituation { Type = "compose_post" });
+        }
+
+        if (surface == "messaging_chat")
+        {
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return message.EndsWith(".") || message.EndsWith("!") || message.EndsWith("?")
+                    ? char.ToUpperInvariant(message[0]) + message[1..]
+                    : char.ToUpperInvariant(message[0]) + message[1..] + ".";
+            }
+
+            return BuildSafeChatFallback(context);
+        }
+
+        var anchor = ExtractFallbackAnchor(context);
+        if (!string.IsNullOrWhiteSpace(anchor))
+        {
+            return $"This is a useful point on {anchor}. The part about {anchor} feels especially relevant.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(sourceText))
+        {
+            return $"This is a useful point. The part about {sourceText.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "this"} feels especially relevant.";
+        }
+
+        return "This is a useful point. The practical implication feels especially relevant.";
+    }
+
+    private static string ExtractFallbackAnchor(MessageContext context)
+    {
+        var source = string.Join(" ",
+            context.SourceTitle ?? string.Empty,
+            context.SourceText ?? string.Empty,
+            context.SourceAuthor ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.Message ?? string.Empty);
+
+        return Regex.Matches(source, @"[A-Za-z0-9][A-Za-z0-9'\-/+]{3,}")
+            .Select(match => match.Value)
+            .Where(token => !token.Equals("this", StringComparison.OrdinalIgnoreCase) &&
+                            !token.Equals("that", StringComparison.OrdinalIgnoreCase) &&
+                            !token.Equals("with", StringComparison.OrdinalIgnoreCase) &&
+                            !token.Equals("your", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault() ?? string.Empty;
     }
 
     private static RelationshipContext BuildRelationshipContext(DecisionV2Input input)

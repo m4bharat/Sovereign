@@ -1,26 +1,25 @@
+using System.Text.RegularExpressions;
 using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
-using System.Linq;
-using System.Text.RegularExpressions;
 
 namespace Sovereign.Intelligence.Services;
 
 public sealed class CandidateScoringEngine : ICandidateScoringEngine
 {
     private static readonly string[] GenericPhrases =
-    {
+    [
         "great post",
-        "well said",
         "thanks for sharing",
-        "great perspective",
+        "well said",
+        "amazing insight",
+        "love this perspective",
+        "completely agree",
+        "this is so true",
         "very insightful",
-        "important reminder",
-        "so true",
-        "love this",
-        "nice breakdown",
-        "clear breakdown"
-    };
+        "great insights",
+        "interesting perspective"
+    ];
 
     public IReadOnlyList<CandidateScore> Score(
         IReadOnlyList<SocialMoveCandidate> candidates,
@@ -28,148 +27,277 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         MessageContext context,
         RelationshipAnalysis relationshipAnalysis)
     {
-        return candidates.Select(candidate =>
-        {
-            if (!PassQualityGates(candidate, situation, context))
-            {
-                return new CandidateScore
-                {
-                    Candidate = candidate,
-                    ComputedTotal = 0.0,
-                    DisqualifiedReason = GetDisqualReason(candidate, situation, context)
-                };
-            }
+        return candidates.Select(candidate => ScoreCandidate(candidate, situation, context, relationshipAnalysis)).ToArray();
+    }
 
-            var reply = candidate.Reply ?? string.Empty;
-            var score = new CandidateScore
+    private static CandidateScore ScoreCandidate(
+        SocialMoveCandidate candidate,
+        SocialSituation situation,
+        MessageContext context,
+        RelationshipAnalysis relationshipAnalysis)
+    {
+        var reply = candidate.Reply ?? string.Empty;
+        var move = Normalize(candidate.Move);
+        if (!PassQualityGates(candidate, situation, context))
+        {
+            return new CandidateScore
             {
                 Candidate = candidate,
-                Relevance = ScoreRelevance(context, reply),
-                Specificity = ScoreSpecificity(context, reply),
-                GenericPenalty = ComputeGenericPenalty(reply, context),
-                CTAResponseQuality = IsCtaSituation((situation.Type ?? string.Empty).Trim().ToLowerInvariant(), context) && LooksLikeDirectAnswer(reply) ? 1.0 : 0.0,
-                InsightDepth = HasInsightShape(reply) ? 1.0 : 0.0,
-                SocialFit = ScoreSocialFit(candidate, context),
-                RelationshipFit = ScoreRelationshipFit(context, relationshipAnalysis),
-                Brevity = ScoreBrevity(reply),
-                Tone = ScoreTone(reply, candidate),
-                RiskAdjustedValue = 0.5,
-                TimingFit = 0.5
+                ComputedTotal = 0.0,
+                DisqualifiedReason = GetDisqualReason(candidate, situation, context),
+                GenericPenalty = ContainsGenericPhrase(reply) ? 0.30 : 0.0
             };
+        }
 
-            score.ComputedTotal =
-                (0.28 * score.Relevance) +
-                (0.18 * score.Specificity) +
-                (0.14 * score.SocialFit) +
-                (0.10 * score.RelationshipFit) +
-                (0.08 * score.Brevity) +
-                (0.08 * score.Tone) +
-                (0.08 * score.CTAResponseQuality) +
-                (0.06 * score.InsightDepth) -
-                score.GenericPenalty;
+        var relevance = ScoreRelevance(context, reply);
+        var specificity = ScoreSpecificity(context, reply);
+        var socialFit = ScoreSocialFit(move, context);
+        var relationshipFit = ScoreRelationshipFit(context, relationshipAnalysis);
+        var brevity = ScoreBrevity(reply, context);
+        var tone = ScoreTone(reply, move, context);
+        var ctaQuality = IsCtaSituation(situation, context) && LooksLikeDirectAnswer(reply) ? 1.0 : 0.4;
+        var insightDepth = HasInsightShape(reply) ? 1.0 : 0.35;
+        var genericPenalty = ComputeGenericPenalty(reply);
+        var familyBoost = GetExpectedFamilies(Normalize(situation.Type)).Contains(move, StringComparer.OrdinalIgnoreCase) ? 0.22 : 0.0;
 
-            var expectedFamilies = GetExpectedFamilies((situation.Type ?? string.Empty).ToLowerInvariant());
-            score.FamilyMatchBoost = expectedFamilies.Contains(candidate.Move, StringComparer.OrdinalIgnoreCase) ? 0.30 : 0.0;
-            score.ComputedTotal += score.FamilyMatchBoost;
+        var score = new CandidateScore
+        {
+            Candidate = candidate,
+            Relevance = relevance,
+            Specificity = specificity,
+            SocialFit = socialFit,
+            RelationshipFit = relationshipFit,
+            Brevity = brevity,
+            Tone = tone,
+            CTAResponseQuality = ctaQuality,
+            InsightDepth = insightDepth,
+            GenericPenalty = genericPenalty,
+            GenericPraisePenalty = genericPenalty,
+            FamilyMatchBoost = familyBoost,
+            RiskAdjustedValue = move == "no_reply" ? 0.20 : 0.75,
+            TimingFit = 0.70,
+            PositioningStrength = specificity,
+            CtaParticipationPenalty = IsCtaSituation(situation, context) && !LooksLikeDirectAnswer(reply) ? 0.20 : 0.0,
+            ParticipationWithoutPositionPenalty = IsCtaSituation(situation, context) && !HasInsightShape(reply) ? 0.20 : 0.0
+        };
 
-            return score;
-        }).ToList();
+        score.ComputedTotal =
+            (0.28 * relevance) +
+            (0.18 * specificity) +
+            (0.14 * socialFit) +
+            (0.12 * relationshipFit) +
+            (0.08 * brevity) +
+            (0.08 * tone) +
+            (0.06 * ctaQuality) +
+            (0.06 * insightDepth) +
+            familyBoost -
+            genericPenalty;
+
+        ApplyHardCapsAndFloors(score, context);
+        return score;
+    }
+
+    private static void ApplyHardCapsAndFloors(CandidateScore score, MessageContext context)
+    {
+        var move = Normalize(score.Candidate.Move);
+        var mustReply = MustReplyForSurface(context);
+        var hasDraft = !string.IsNullOrWhiteSpace(context.Message);
+        var hasSourceText = !string.IsNullOrWhiteSpace(context.SourceText);
+
+        if (move == "no_reply" && mustReply)
+        {
+            score.NoReplyPenalty = Math.Max(score.NoReplyPenalty, score.ComputedTotal - 0.05);
+            score.ComputedTotal = Math.Min(score.ComputedTotal, 0.05);
+        }
+
+        if (hasDraft && move is "rewrite_user_intent" or "draft_post" or "helpful_reply" or "respond_helpfully")
+        {
+            score.ComputedTotal = Math.Max(score.ComputedTotal, 0.62);
+        }
+
+        if (string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase) &&
+            hasSourceText &&
+            IsSpecificContextualReply(score.Candidate.Reply, context))
+        {
+            score.ComputedTotal = Math.Max(score.ComputedTotal, 0.60);
+        }
     }
 
     private static bool PassQualityGates(SocialMoveCandidate candidate, SocialSituation situation, MessageContext context)
     {
+        var move = Normalize(candidate.Move);
         var reply = (candidate.Reply ?? string.Empty).Trim();
-        var move = (candidate.Move ?? string.Empty).Trim().ToLowerInvariant();
-        var situationType = (situation.Type ?? string.Empty).Trim().ToLowerInvariant();
-
-        if (string.Equals(situation.Type, "compose_post", StringComparison.OrdinalIgnoreCase))
-        {
-            return candidate.Move is "draft_post" or "rewrite_user_intent";
-        }
-
-        if (string.IsNullOrWhiteSpace(reply) && move != "no_reply")
-            return false;
+        var situationType = Normalize(situation.Type);
 
         if (move == "no_reply")
         {
-            return situationType is "defer_no_reply" or "controversial_no_reply" or "low_signal" or "sensitive" or "controversial";
+            return !MustReplyForSurface(context) &&
+                   situationType is "defer_no_reply" or "controversial_no_reply" or "low_signal" or "sensitive" or "controversial";
         }
 
-        var allowedFamilies = GetExpectedFamilies(situationType);
-        if (allowedFamilies.Length > 0 && !allowedFamilies.Contains(move, StringComparer.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(reply))
             return false;
 
-        if (!IsChatSurface(context) && !HasMinimumAnchorOverlap(reply, context, requiredOverlap: 1))
+        if (reply.Length is < 8 or > 600)
             return false;
 
-        if (!IsChatSurface(context) && IsGenericReply(reply))
+        if (string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase))
+            return move is "draft_post" or "rewrite_user_intent" or "compose_post";
+
+        if (!IsChatSurface(context) && !HasMinimumAnchorOverlap(reply, context, 1))
             return false;
 
-        if (IsCtaSituation(situationType, context) && !LooksLikeDirectAnswer(reply))
-            return false;
-
-        if ((move == "praise" || move == "congratulate" || move == "congratulate_encourage") &&
-            !HasMilestoneOrResultLanguage(reply, context))
-            return false;
-
-        if ((move == "add_insight" || move == "add_specific_insight" || move == "add_nuance") &&
-            !HasInsightShape(reply))
-            return false;
-
-        if (move == "acknowledge" && reply.Length > 240)
+        if (!IsChatSurface(context) && ContainsGenericPhrase(reply) && !HasMinimumAnchorOverlap(reply, context, 1))
             return false;
 
         return true;
+    }
+
+    private static string GetDisqualReason(SocialMoveCandidate candidate, SocialSituation situation, MessageContext context)
+    {
+        var move = Normalize(candidate.Move);
+        var reply = (candidate.Reply ?? string.Empty).Trim();
+        var situationType = Normalize(situation.Type);
+
+        if (move == "no_reply" && MustReplyForSurface(context))
+            return "no_reply not allowed on required-reply surface";
+
+        if (move == "no_reply" &&
+            situationType is not ("defer_no_reply" or "controversial_no_reply" or "low_signal" or "sensitive" or "controversial"))
+            return "no_reply not allowed for situation";
+
+        if (string.IsNullOrWhiteSpace(reply))
+            return "reply is empty";
+
+        if (reply.Length is < 8 or > 600)
+            return "reply length out of range";
+
+        if (!IsChatSurface(context) && !HasMinimumAnchorOverlap(reply, context, 1))
+            return "reply not anchored to context";
+
+        return "failed quality gate";
     }
 
     private static string[] GetExpectedFamilies(string situationType)
     {
         return situationType switch
         {
-            "achievement_share" => new[] { "praise", "congratulate" },
-            "personal_update" => new[] { "congratulate", "congratulate_encourage", "encourage" },
-            "industry_news" => new[] { "add_insight", "add_specific_insight", "ask_relevant_question" },
-            "group_announcement" => new[] { "acknowledge", "appreciate" },
-            "holiday_greeting" => new[] { "respond", "appreciate" },
-            "relationship_preservation" => new[] { "engage", "appreciate", "light_touch" },
-            "job_search" => new[] { "encourage", "congratulate", "offer_support" },
-            "cta_engagement" => new[] { "answer_supportively", "add_specific_insight", "add_insight" },
-            "cta_or_question" => new[] { "answer_supportively", "add_specific_insight", "ask_relevant_question" },
-            "question" => new[] { "answer_supportively", "ask_relevant_question" },
-            "rewrite_feed_reply" => new[] { "rewrite_user_intent", "light_touch", "add_specific_insight" },
-            "rewrite_direct_message" => new[] { "rewrite_user_intent", "respond_helpfully" },
-            "direct_message" => new[] { "respond_helpfully", "rewrite_user_intent", "acknowledge_and_continue" },
-            "compose_post" => new[] { "draft_post", "rewrite_user_intent", "outline_post" },
-            "defer_no_reply" => new[] { "no_reply" },
-            "controversial_no_reply" => new[] { "no_reply" },
-            "low_signal" => new[] { "no_reply" },
-            "sensitive" => new[] { "no_reply" },
-            "controversial" => new[] { "no_reply" },
-            "milestone" => new[] { "praise", "congratulate", "congratulate_encourage" },
-            "educational" => new[] { "add_insight", "add_specific_insight", "ask_relevant_question", "appreciate" },
-            "opinion" => new[] { "add_nuance", "add_insight", "ask_relevant_question", "agree" },
-            "greeting" => new[] { "respond", "appreciate" },
-            "achievement" => new[] { "praise", "congratulate", "appreciate" },
-            "news" => new[] { "add_insight", "ask_relevant_question", "appreciate" },
-            "update" => new[] { "acknowledge", "appreciate" },
-            _ => new[] { "engage", "appreciate", "light_touch", "add_insight" }
+            "achievement_share" => ["praise", "congratulate", "congratulate_encourage"],
+            "personal_update" => ["congratulate", "congratulate_encourage", "encourage"],
+            "industry_news" => ["add_insight", "add_specific_insight", "ask_relevant_question"],
+            "group_announcement" => ["acknowledge", "appreciate"],
+            "holiday_greeting" => ["respond", "appreciate"],
+            "relationship_preservation" => ["engage", "appreciate", "light_touch"],
+            "job_search" => ["encourage", "congratulate", "offer_support"],
+            "cta_engagement" => ["answer_supportively", "add_specific_insight", "add_insight"],
+            "cta_or_question" => ["answer_supportively", "add_specific_insight", "ask_relevant_question"],
+            "question" => ["answer_supportively", "ask_relevant_question"],
+            "rewrite_feed_reply" => ["rewrite_user_intent", "light_touch", "add_specific_insight"],
+            "rewrite_direct_message" => ["rewrite_user_intent", "respond_helpfully"],
+            "direct_message" => ["respond_helpfully", "rewrite_user_intent"],
+            "compose_post" => ["draft_post", "rewrite_user_intent"],
+            "defer_no_reply" => ["no_reply"],
+            "controversial_no_reply" => ["no_reply"],
+            "low_signal" => ["no_reply"],
+            "sensitive" => ["no_reply"],
+            "controversial" => ["no_reply"],
+            "reflection" => ["engage", "add_insight", "light_touch"],
+            "greeting" => ["respond", "appreciate"],
+            "opinion" => ["add_nuance", "add_insight", "ask_relevant_question"],
+            "educational" => ["add_insight", "add_specific_insight", "ask_relevant_question"],
+            _ => ["engage", "appreciate", "add_insight"]
         };
     }
 
-    private static bool IsGenericReply(string reply)
+    private static double ScoreRelevance(MessageContext context, string reply)
+    {
+        if (HasMinimumAnchorOverlap(reply, context, 2))
+            return 1.0;
+        if (HasMinimumAnchorOverlap(reply, context, 1))
+            return 0.82;
+        return IsChatSurface(context) ? 0.70 : 0.30;
+    }
+
+    private static double ScoreSpecificity(MessageContext context, string reply)
+    {
+        if (HasMinimumAnchorOverlap(reply, context, 2))
+            return 1.0;
+        if (reply.Length >= 80)
+            return 0.80;
+        if (HasMinimumAnchorOverlap(reply, context, 1))
+            return 0.72;
+        return 0.45;
+    }
+
+    private static double ScoreSocialFit(string move, MessageContext context)
+    {
+        if (IsChatSurface(context))
+            return move is "rewrite_user_intent" or "respond_helpfully" or "respond" ? 1.0 : 0.70;
+
+        if (string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase))
+            return move is "draft_post" or "rewrite_user_intent" ? 1.0 : 0.65;
+
+        return move is "add_insight" or "add_specific_insight" or "acknowledge" or "appreciate" or "praise" or "congratulate" or "engage"
+            ? 1.0
+            : 0.70;
+    }
+
+    private static double ScoreRelationshipFit(MessageContext context, RelationshipAnalysis relationshipAnalysis)
+    {
+        var baseScore = context.TotalInteractions > 0 ? 0.75 : 0.60;
+        if (relationshipAnalysis.MomentumScore > 0.6)
+            baseScore += 0.10;
+        return Math.Min(1.0, baseScore);
+    }
+
+    private static double ScoreBrevity(string reply, MessageContext context)
+    {
+        if (string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase))
+        {
+            return reply.Length is >= 120 and <= 600 ? 1.0 : 0.45;
+        }
+
+        return reply.Length switch
+        {
+            >= 8 and <= 220 => 1.0,
+            <= 320 => 0.80,
+            <= 480 => 0.60,
+            _ => 0.35
+        };
+    }
+
+    private static double ScoreTone(string reply, string move, MessageContext context)
     {
         if (string.IsNullOrWhiteSpace(reply))
-            return true;
+            return 0.0;
 
-        var text = reply.Trim().ToLowerInvariant();
+        if (IsChatSurface(context) && reply.Contains("linkedin", StringComparison.OrdinalIgnoreCase))
+            return 0.35;
 
-        if (GenericPhrases.Any(p => text.Contains(p)))
-            return true;
+        if (move == "answer_supportively" && LooksLikeDirectAnswer(reply))
+            return 1.0;
 
-        if (text.Length <= 20)
-            return true;
+        return 0.82;
+    }
 
-        return false;
+    private static double ComputeGenericPenalty(string reply)
+    {
+        if (string.IsNullOrWhiteSpace(reply))
+            return 0.0;
+
+        var penalty = GenericPhrases.Any(phrase => reply.Contains(phrase, StringComparison.OrdinalIgnoreCase))
+            ? 0.30
+            : 0.0;
+
+        if (reply.Trim().Length < 20)
+            penalty += 0.05;
+
+        return Math.Min(0.60, penalty);
+    }
+
+    private static bool ContainsGenericPhrase(string reply)
+    {
+        return GenericPhrases.Any(phrase => reply.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool HasMinimumAnchorOverlap(string reply, MessageContext context, int requiredOverlap)
@@ -177,253 +305,104 @@ public sealed class CandidateScoringEngine : ICandidateScoringEngine
         if (string.IsNullOrWhiteSpace(reply))
             return false;
 
+        var sourceTokens = ExtractContextTokens(context);
+        if (sourceTokens.Count == 0)
+            return IsChatSurface(context);
+
+        var replyTokens = Regex.Matches(reply.ToLowerInvariant(), @"[a-z0-9][a-z0-9'\-/+]{3,}")
+            .Select(match => match.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return replyTokens.Count(token => sourceTokens.Contains(token)) >= requiredOverlap;
+    }
+
+    private static HashSet<string> ExtractContextTokens(MessageContext context)
+    {
         var source = string.Join(" ",
             context.SourceTitle ?? string.Empty,
             context.SourceText ?? string.Empty,
+            context.SourceAuthor ?? string.Empty,
             context.ParentContextText ?? string.Empty,
-            context.NearbyContextText ?? string.Empty);
+            context.Message ?? string.Empty).ToLowerInvariant();
 
-        var sourceTokens = Regex.Matches(source.ToLowerInvariant(), @"[a-z0-9][a-z0-9\-/+]{2,}")
-            .Select(m => m.Value)
-            .Where(t => t.Length >= 4)
+        return Regex.Matches(source, @"[a-z0-9][a-z0-9'\-/+]{3,}")
+            .Select(match => match.Value)
+            .Where(token => token.Length >= 4)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
 
-        if (sourceTokens.Count == 0)
-            return true;
-
-        var replyTokens = Regex.Matches(reply.ToLowerInvariant(), @"[a-z0-9][a-z0-9\-/+]{2,}")
-            .Select(m => m.Value)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var overlap = replyTokens.Count(t => sourceTokens.Contains(t));
-        return overlap >= requiredOverlap;
+    private static bool IsSpecificContextualReply(string? reply, MessageContext context)
+    {
+        return !string.IsNullOrWhiteSpace(reply) &&
+               !ContainsGenericPhrase(reply) &&
+               HasMinimumAnchorOverlap(reply, context, 1) &&
+               reply.Trim().Length >= 24;
     }
 
     private static bool LooksLikeDirectAnswer(string reply)
     {
-        if (string.IsNullOrWhiteSpace(reply))
-            return false;
-
-        var text = reply.Trim().ToLowerInvariant();
-
-        if (text.StartsWith("my take:") || text.StartsWith("my view:"))
-            return true;
-
-        if (text.Contains("start with") || text.Contains("focus on") || text.Contains("because"))
-            return true;
-
-        if (text.Contains("in practice") || text.Contains("the bottleneck") || text.Contains("the trade-off"))
-            return true;
-
-        return false;
-    }
-
-    private static bool HasMilestoneOrResultLanguage(string reply, MessageContext context)
-    {
-        var text = reply.ToLowerInvariant();
-        var source = string.Join(" ",
-            context.SourceTitle ?? string.Empty,
-            context.SourceText ?? string.Empty).ToLowerInvariant();
-
-        var markers = new[]
-        {
-            "milestone", "promotion", "award", "launch", "achievement",
-            "result", "progress", "step", "won", "shipped", "released",
-            "moved", "grew", "delivered", "earned"
-        };
-
-        return markers.Any(m => text.Contains(m) || source.Contains(m));
+        var normalized = (reply ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized.StartsWith("my take:") ||
+               normalized.Contains("start with") ||
+               normalized.Contains("focus on") ||
+               normalized.Contains("because") ||
+               normalized.Contains("in practice");
     }
 
     private static bool HasInsightShape(string reply)
     {
-        if (string.IsNullOrWhiteSpace(reply))
-            return false;
-
-        var text = reply.ToLowerInvariant();
-
-        var insightMarkers = new[]
-        {
-            "trade-off", "second-order", "second order", "downstream",
-            "constraint", "bottleneck", "coordination", "the real challenge",
-            "what changes", "where it gets hard", "in practice", "the risk is",
-            "operational layer", "portability", "governance", "most teams underestimate"
-        };
-
-        return insightMarkers.Any(m => text.Contains(m)) ||
-               text.Contains("because") ||
-               text.Contains("rather than") ||
-               text.Contains("not just");
+        var normalized = (reply ?? string.Empty).ToLowerInvariant();
+        return normalized.Contains("trade-off") ||
+               normalized.Contains("tradeoffs") ||
+               normalized.Contains("coordination") ||
+               normalized.Contains("execution") ||
+               normalized.Contains("operational") ||
+               normalized.Contains("because") ||
+               normalized.Contains("not just");
     }
 
-    private static bool IsCtaSituation(string situationType, MessageContext context)
+    private static bool IsCtaSituation(SocialSituation situation, MessageContext context)
     {
-        return situationType is "cta_engagement" or "cta_or_question" or "question"
-            || IsCtaEngagementPost(context);
+        var situationType = Normalize(situation.Type);
+        if (situationType is "cta_engagement" or "cta_or_question" or "question")
+            return true;
+
+        var source = string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty).ToLowerInvariant();
+
+        return source.Contains("comment below") || source.Contains("share your") || source.Contains("what do you think");
     }
 
     private static bool IsChatSurface(MessageContext context)
     {
-        return string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(context.Surface, "messaging_chat", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(context.Surface, "direct_message", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(context.Surface, "messaging_chat", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(context.Surface, "direct_message", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GetDisqualReason(SocialMoveCandidate candidate, SocialSituation situation, MessageContext context)
+    private static bool MustReplyForSurface(MessageContext context)
     {
-        var reply = (candidate.Reply ?? string.Empty).Trim();
-        var move = (candidate.Move ?? string.Empty).Trim().ToLowerInvariant();
-        var situationType = (situation.Type ?? string.Empty).Trim().ToLowerInvariant();
+        var surface = Normalize(context.Surface);
+        var hasMessage = !string.IsNullOrWhiteSpace(context.Message);
+        var hasSourceText = !string.IsNullOrWhiteSpace(context.SourceText);
+        var allowNoReply = context.InteractionMetadata is not null &&
+                           context.InteractionMetadata.TryGetValue("allow_no_reply", out var raw) &&
+                           bool.TryParse(raw, out var parsed) &&
+                           parsed;
 
-        if (move == "no_reply" &&
-            situationType is not ("defer_no_reply" or "controversial_no_reply" or "low_signal" or "sensitive" or "controversial"))
-            return "no_reply not allowed for this situation";
-
-        var allowedFamilies = GetExpectedFamilies(situationType);
-        if (allowedFamilies.Length > 0 && !allowedFamilies.Contains(move, StringComparer.OrdinalIgnoreCase))
-            return "move family mismatch";
-
-        if (!IsChatSurface(context) && !HasMinimumAnchorOverlap(reply, context, 1))
-            return "reply not anchored to source";
-
-        if (!IsChatSurface(context) && IsGenericReply(reply))
-            return "generic public reply";
-
-        if (IsCtaSituation(situationType, context) && !LooksLikeDirectAnswer(reply))
-            return "cta reply does not answer directly";
-
-        if ((move == "praise" || move == "congratulate" || move == "congratulate_encourage") &&
-            !HasMilestoneOrResultLanguage(reply, context))
-            return "praise/congratulate reply lacks milestone or result language";
-
-        if ((move == "add_insight" || move == "add_specific_insight" || move == "add_nuance") &&
-            !HasInsightShape(reply))
-            return "insight reply lacks insight shape";
-
-        return "failed quality gate";
-    }
-
-    private static double ComputeGenericPenalty(string? reply, MessageContext context)
-    {
-        if (string.IsNullOrWhiteSpace(reply))
-            return 0.0;
-
-        var text = reply.Trim().ToLowerInvariant();
-        var penalty = 0.0;
-
-        foreach (var phrase in GenericPhrases)
+        return surface switch
         {
-            if (text.Contains(phrase))
-                penalty += 0.18;
-        }
-
-        if (text.Length < 20)
-            penalty += 0.05;
-
-        if (!HasMinimumAnchorOverlap(text, context, 1))
-            penalty += 0.12;
-
-        return Math.Min(penalty, 0.60);
-    }
-
-    private static double ScoreRelevance(MessageContext context, string reply)
-    {
-        if (string.IsNullOrWhiteSpace(reply))
-            return 0.0;
-
-        return HasMinimumAnchorOverlap(reply, context, 1) ? 1.0 : 0.35;
-    }
-
-    private static double ScoreSpecificity(MessageContext context, string reply)
-    {
-        if (string.IsNullOrWhiteSpace(reply))
-            return 0.0;
-
-        if (HasMinimumAnchorOverlap(reply, context, 2))
-            return 1.0;
-
-        return reply.Length > 60 ? 0.75 : 0.45;
-    }
-
-    private static double ScoreSocialFit(SocialMoveCandidate candidate, MessageContext context)
-    {
-        var move = (candidate.Move ?? string.Empty).Trim().ToLowerInvariant();
-
-        if (IsChatSurface(context))
-        {
-            return move is "respond_helpfully" or "rewrite_user_intent" or "respond" ? 1.0 : 0.6;
-        }
-
-        return move is "engage" or "acknowledge" or "add_insight" or "add_specific_insight" or "praise" or "congratulate"
-            ? 1.0
-            : 0.65;
-    }
-
-    private static double ScoreRelationshipFit(MessageContext context, RelationshipAnalysis relationshipAnalysis)
-    {
-        if (IsChatSurface(context))
-            return 1.0;
-
-        return context.TotalInteractions > 0 ? 0.8 : 0.6;
-    }
-
-    private static double ScoreBrevity(string reply)
-    {
-        if (string.IsNullOrWhiteSpace(reply))
-            return 0.0;
-
-        return reply.Length switch
-        {
-            <= 220 => 1.0,
-            <= 320 => 0.8,
-            <= 480 => 0.55,
-            _ => 0.35
+            "feed_reply" => hasMessage && hasSourceText,
+            "start_post" => hasMessage,
+            "messaging_chat" => hasMessage && !allowNoReply,
+            _ => false
         };
     }
 
-    private static double ScoreTone(string reply, SocialMoveCandidate candidate)
-    {
-        if (string.IsNullOrWhiteSpace(reply))
-            return 0.0;
-
-        var move = (candidate.Move ?? string.Empty).Trim().ToLowerInvariant();
-
-        if (move == "ask_relevant_question" && reply.Contains('?'))
-            return 1.0;
-
-        if (move == "answer_supportively" && LooksLikeDirectAnswer(reply))
-            return 1.0;
-
-        return 0.8;
-    }
-
-    private static bool IsCtaEngagementPost(MessageContext context)
-    {
-        var source = string.Join(" ",
-            context.SourceTitle ?? string.Empty,
-            context.SourceText ?? string.Empty,
-            context.ParentContextText ?? string.Empty,
-            context.NearbyContextText ?? string.Empty)
-            .ToLowerInvariant();
-
-        var signals = new[]
-        {
-            "drop in the comments",
-            "comment below",
-            "let me know",
-            "tell me",
-            "where are you right now",
-            "which skill",
-            "what are you learning next",
-            "what are you working on",
-            "share in the comments",
-            "comment your",
-            "reply with",
-            "what's your next step"
-        };
-
-        return signals.Any(signal => source.Contains(signal));
-    }
+    private static string Normalize(string? value) =>
+        (value ?? string.Empty).Trim().ToLowerInvariant();
 }
