@@ -206,10 +206,10 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         var anchor = ExtractPrimaryAnchor(context);
         if (!string.IsNullOrWhiteSpace(anchor))
         {
-            return $"Appreciate the update here. The signal around {anchor} came through clearly.";
+            return $"{Capitalize(anchor)} looks like the kind of update that will matter more once it is live in the real workflow.";
         }
 
-        return "Appreciate the update here.";
+        return "This update looks likely to matter once it is tested in the real workflow.";
     }
 
     private static string GenerateInsightReply(MessageContext context)
@@ -217,7 +217,7 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         var anchor = ExtractPrimaryAnchor(context);
         if (!string.IsNullOrWhiteSpace(anchor))
         {
-            return $"This is a useful point on {anchor}. The part about {anchor} feels especially relevant once it reaches real execution.";
+            return $"The constraint around {anchor} usually shows up once it has to hold up in real execution, not in the first draft of the idea.";
         }
 
         return "The real challenge usually shows up in execution, where coordination and trade-offs become visible.";
@@ -228,10 +228,10 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
         var anchor = ExtractPrimaryAnchor(context);
         if (!string.IsNullOrWhiteSpace(anchor))
         {
-            return $"The point on {anchor} is what makes this worth engaging with. That is where the practical value becomes clear.";
+            return $"The practical value of {anchor} usually becomes clearer once people have to work through the trade-offs around it.";
         }
 
-        return "There is a useful practical point here worth engaging with.";
+        return "The practical value usually becomes clearer once the trade-offs have to be worked through.";
     }
 
     private static string GenerateSupportReply(MessageContext context)
@@ -263,10 +263,10 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
             var anchor = ExtractPrimaryAnchor(context);
             if (!string.IsNullOrWhiteSpace(anchor))
             {
-                return $"This is a useful point on {anchor}. The part about {anchor} feels especially relevant.";
+                return $"The part about {anchor} gets more interesting once it has to hold up in day-to-day execution.";
             }
 
-            return "This is a useful point. The practical implication feels especially relevant.";
+            return "The practical implication gets more interesting once it has to hold up in day-to-day execution.";
         }
 
         if (IsChatSurface(context))
@@ -279,7 +279,7 @@ public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
             return GeneratePostReply(context);
         }
 
-        return "There is a useful point here worth engaging with.";
+        return "There is a practical angle here that becomes clearer once it reaches real use.";
     }
 
     private static string FinalizeReply(string reply, MessageContext context, string move)
