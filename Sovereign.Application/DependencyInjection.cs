@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Sovereign.Application.Engines;
 using Sovereign.Application.Interfaces;
 using Sovereign.Application.Services;
+using Sovereign.Application.Telemetry;
 using Sovereign.Application.UseCases;
 using Sovereign.Domain.Services;
 
@@ -38,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<PromptComposer>();
         services.AddScoped<IToneAdjustmentStrategy, RuleBasedToneStrategy>();
         services.AddScoped<DecideV2UseCase>();
+        services.AddScoped<ITelemetryService, TelemetryService>();
         return services;
     }
 }

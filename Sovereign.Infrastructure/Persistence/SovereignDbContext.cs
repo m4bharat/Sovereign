@@ -20,6 +20,9 @@ public class SovereignDbContext : DbContext
     public DbSet<RelationshipDecayAlert> RelationshipDecayAlerts => Set<RelationshipDecayAlert>();
     public DbSet<SocialEdge> SocialEdges => Set<SocialEdge>();
     public DbSet<InfluenceSnapshot> InfluenceSnapshots => Set<InfluenceSnapshot>();
+    public DbSet<SuggestionEvent> SuggestionEvents => Set<SuggestionEvent>();
+    public DbSet<SuggestionFeedback> SuggestionFeedback => Set<SuggestionFeedback>();
+    public DbSet<SuggestionSnapshot> SuggestionSnapshots => Set<SuggestionSnapshot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

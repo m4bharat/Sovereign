@@ -22,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<ISocialEdgeRepository, SocialEdgeRepository>();
         services.AddScoped<IInfluenceSnapshotRepository, InfluenceSnapshotRepository>();
+        services.AddScoped<ITelemetryRepository, TelemetryRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 
