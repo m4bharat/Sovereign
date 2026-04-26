@@ -19,6 +19,7 @@ import { SessionService } from '../../core/services/session.service';
         </div>
 
         <div class="actions">
+          <button type="button" class="secondary" (click)="goToAnalytics()">Telemetry analytics</button>
           <button type="button" (click)="logout()">Logout</button>
           <button type="button" class="secondary" (click)="goToAuth()">Back to auth</button>
         </div>
@@ -50,5 +51,9 @@ export class DashboardPageComponent {
 
   goToAuth(): void {
     void this.router.navigateByUrl('/auth');
+  }
+
+  goToAnalytics(): void {
+    void this.router.navigateByUrl('/analytics');
   }
 }

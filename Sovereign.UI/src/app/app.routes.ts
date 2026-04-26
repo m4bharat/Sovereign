@@ -6,5 +6,10 @@ export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'auth' },
   { path: 'auth', component: AuthPageComponent },
   { path: 'dashboard', component: DashboardPageComponent },
+  {
+    path: 'analytics',
+    loadComponent: () =>
+      import('./features/analytics/analytics-page.component').then(m => m.AnalyticsPageComponent)
+  },
   { path: '**', redirectTo: 'auth' }
 ];
