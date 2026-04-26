@@ -1,724 +1,528 @@
+using System.Text.RegularExpressions;
 using Sovereign.Domain.Models;
 using Sovereign.Intelligence.Interfaces;
 using Sovereign.Intelligence.Models;
-using System.Text.RegularExpressions;
 
 namespace Sovereign.Intelligence.Services;
 
 public sealed class CandidateReplyGenerator : ICandidateReplyGenerator
 {
+    private static readonly string[] GenericReplies =
+    [
+        "great post",
+        "thanks for sharing",
+        "well said",
+        "amazing insight",
+        "love this perspective",
+        "completely agree",
+        "very insightful",
+        "this is so true",
+        "great insights",
+        "interesting perspective"
+    ];
+
+    private static readonly string[] ForcedCtaEndings =
+    [
+        "what do you think?",
+        "thoughts?",
+        "agree?"
+    ];
+
+    private static readonly string[] FormalAiPhrases =
+    [
+        "i appreciate you sharing this valuable insight",
+        "this resonates deeply",
+        "in today's fast-paced world"
+    ];
+
+    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "about", "after", "again", "also", "amid", "been", "being", "below", "between", "build",
+        "came", "clear", "could", "does", "doing", "down", "each", "else", "even", "ever",
+        "from", "have", "here", "into", "just", "keep", "made", "make", "many", "more",
+        "most", "much", "only", "over", "part", "post", "really", "same", "share", "some",
+        "still", "take", "than", "that", "their", "them", "then", "there", "these", "they",
+        "this", "those", "through", "today", "very", "what", "when", "where", "which", "while",
+        "with", "work", "would", "your"
+    };
+
     public IReadOnlyList<SocialMoveCandidate> Generate(
         IReadOnlyList<SocialMoveCandidate> moveCandidates,
         MessageContext context)
     {
-        var normalizedMessage = (context.Message ?? string.Empty).Trim();
-        var hasUserDraft = !string.IsNullOrWhiteSpace(normalizedMessage);
-        var sourceText = (context.SourceText ?? string.Empty).Trim();
-        var situationType = (context.SituationType ?? string.Empty).Trim();
+        var hasUserDraft = !string.IsNullOrWhiteSpace(context.Message);
 
         return moveCandidates
-            .Select(move =>
-            {
-                var reply = GenerateReplyForMove(move.Move, context, normalizedMessage, sourceText);
-
-                // ===== GENERATION QUALITY FILTER =====
-                if (!string.Equals(move.Move, "no_reply", StringComparison.OrdinalIgnoreCase))
-                {
-                    var trimmed = (reply ?? string.Empty).Trim();
-
-                    // kill empty or near-empty replies early
-                    if (trimmed.Length < 6)
-                    {
-                        reply = string.Empty;
-                    }
-                    else if (IsGenericReply(trimmed) && trimmed.Length < 60)
-                    {
-                        reply = BuildFallbackReply(move.Move, context, situationType);
-                    }
-                }
-
-                var shortReply = BuildShortReplyForMove(move.Move, context, normalizedMessage, sourceText);
-
-                System.Diagnostics.Debug.WriteLine(
-                    $"[Sovereign][Generator] Move={move.Move}, Situation={situationType}, Surface={context.Surface}, Reply={reply}");
-
-                return new SocialMoveCandidate
-                {
-                    Move = move.Move,
-                    Rationale = move.Rationale,
-                    Reply = reply,
-                    ShortReply = shortReply,
-                    GenerationConfidence = EstimateConfidence(move.Move, reply, hasUserDraft, sourceText),
-                    RequiresPolish = ShouldPolish(reply),
-                };
-            })
+            .Select(candidate => GenerateCandidate(candidate, context, hasUserDraft))
             .ToArray();
     }
 
-    private static string GenerateReplyForMove(
-        string move,
+    private static SocialMoveCandidate GenerateCandidate(
+        SocialMoveCandidate candidate,
         MessageContext context,
-        string userDraft,
-        string sourceText)
+        bool hasUserDraft)
     {
-        var isFeedReply = string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase);
-        var isCompose = string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase);
-        var hasDraft = !string.IsNullOrWhiteSpace(userDraft);
-        var author = context.SourceAuthor?.Trim();
-        var topic = ExtractTopic(sourceText);
-        var situationType = (context.SituationType ?? string.Empty).Trim().ToLowerInvariant();
-
-        return move switch
+        var move = NormalizeMove(candidate.Move);
+        var reply = move switch
         {
-            "rewrite_user_intent" =>
-                RewriteUserDraft(userDraft, sourceText, isFeedReply, isCompose, author),
+            "no_reply" => string.Empty,
+            "draft_post" or "outline_post" => GeneratePostReply(context),
+            "rewrite_user_intent" => GenerateRewriteReply(context),
+            "respond_helpfully" or "respond" => GenerateChatReply(context),
+            "answer_supportively" or "answer_question" => GenerateAnswerReply(context),
+            "praise" or "congratulate" or "congratulate_encourage" => GenerateMilestoneReply(context),
+            "acknowledge" or "acknowledge_update" or "appreciate" => GenerateAnnouncementReply(context),
+            "add_insight" or "add_specific_insight" or "add_nuance" or "agree" => GenerateInsightReply(context),
+            "engage" or "light_touch" or "light_touch_question" or "ask_relevant_question" => GenerateContextualReply(context),
+            "encourage" or "offer_support" => GenerateSupportReply(context),
+            _ => GenerateFallbackReply(context)
+        };
 
-            "draft_post" =>
-                GeneratePost(userDraft),
+        reply = FinalizeReply(reply, context, move);
+        if (!PassesReplyQuality(reply, context, move))
+        {
+            reply = FinalizeReply(BuildSafeFallbackReply(context, move), context, move);
+        }
 
-            "outline_post" =>
-                GeneratePostOutline(userDraft),
-
-            "add_specific_insight" =>
-                GenerateInsightReply(sourceText, userDraft),
-
-            "add_insight" =>
-                GenerateInsightReply(sourceText, userDraft),
-
-            "light_touch" =>
-                GenerateLightReply(sourceText, userDraft),
-
-            "light_touch_question" =>
-                GenerateLightTouchQuestion(sourceText),
-
-            "answer_question" =>
-                GenerateHelpfulReply(userDraft, sourceText),
-
-            "respond_helpfully" =>
-                GenerateHelpfulReply(userDraft, sourceText),
-
-            "congratulate" =>
-                string.IsNullOrWhiteSpace(author)
-                    ? "Congratulations on this milestone. Wishing you the very best ahead."
-                    : $"Congratulations, {author}. Wishing you the very best ahead.",
-
-            "congratulate_encourage" =>
-                string.IsNullOrWhiteSpace(author)
-                    ? "Congratulations on this milestone — exciting to see the momentum behind your journey."
-                    : $"Congratulations, {author} — exciting to see the momentum behind your journey.",
-
-            "appreciate_journey" =>
-                string.IsNullOrWhiteSpace(author)
-                    ? "Really appreciate the journey behind this — it clearly reflects consistency and effort."
-                    : $"Really appreciate the journey behind this, {author} — it clearly reflects consistency and effort.",
-
-            "express_interest" =>
-                hasDraft
-                    ? RewriteStandaloneSentence(userDraft)
-                    : "This looks like an interesting opportunity. I’d love to learn more.",
-
-            "amplify_signal" =>
-                "This is worth getting in front of the right people — strong opportunity.",
-
-            "offer_support" =>
-                "Happy to support or help connect the dots if that would be useful.",
-
-            "agree" =>
-                hasDraft
-                    ? RewriteStandaloneSentence(userDraft)
-                    : "I agree with the core point here — the execution layer is where the real difference shows up.",
-
-            "add_nuance" =>
-                string.IsNullOrWhiteSpace(topic)
-                    ? "I agree — and I’d add that the real difference usually comes from how quickly these ideas get operationalized."
-                    : $"I agree — and I’d add that with {topic}, the real difference usually comes from how quickly it gets operationalized.",
-
-            "answer_supportively" =>
-                RequiresCtaPositioning(context)
-                    ? BuildCtaParticipationReply(context)
-                    : GenerateHelpfulReply(userDraft, sourceText),
-
-            "acknowledge_update" =>
-                string.IsNullOrWhiteSpace(topic)
-                    ? "Thanks for the update — good to see the progress."
-                    : $"Thanks for the update on {topic} — good to see the progress.",
-
-            "encourage" =>
-                hasDraft
-                    ? RewriteStandaloneSentence(userDraft)
-                    : "Strong direction — looking forward to seeing how this develops.",
-
-            "appreciate" =>
-                hasDraft && (isFeedReply || isCompose)
-                    ? RewriteUserDraft(userDraft, sourceText, isFeedReply, isCompose, author)
-                    : string.IsNullOrWhiteSpace(topic)
-                        ? "Really clear and useful framing."
-                        : $"Really clear framing on {topic} — easy to connect to real-world execution.",
-
-            "ask_relevant_question" =>
-                BuildFramedQuestion(context, move),
-
-            "defer" =>
-                "Impressive achievement. Well deserved.",
-
-            "direct_message" =>
-                "This feels worth continuing in DM.",
-
-            "ask_details" =>
-                "Could you share a bit more detail on how you’re thinking about this?",
-
-            "engage_privately" =>
-                "This feels like a conversation worth continuing privately — happy to discuss further.",
-
-            "engage" =>
-                string.IsNullOrWhiteSpace(topic)
-                    ? "This resonates — there’s a lot to unpack in how this plays out in practice."
-                    : $"This resonates — especially how {topic} plays out in practice.",
-
-            "praise" =>
-                "Strong work — this is a meaningful result.",
-
-            "respond" =>
-                "Thanks for sharing this.",
-
-            "acknowledge" =>
-                hasDraft
-                    ? RewriteStandaloneSentence(userDraft)
-                    : "Thanks for the update.",
-
-            "no_reply" =>
-                string.Empty,
-
-            _ =>
-                DefaultReply(context, userDraft, sourceText, situationType, hasDraft)
+        return new SocialMoveCandidate
+        {
+            Move = candidate.Move,
+            Rationale = candidate.Rationale,
+            Reply = reply,
+            ShortReply = BuildShortReply(move, reply, context),
+            GenerationConfidence = EstimateConfidence(move, reply, hasUserDraft, context),
+            RequiresPolish = reply.Length > 120,
+            Alternatives = candidate.Alternatives,
+            RelationshipEffect = candidate.RelationshipEffect,
+            RiskScore = candidate.RiskScore,
+            OpportunityScore = candidate.OpportunityScore,
+            GenericPenalty = IsGenericReply(reply) ? 0.30 : 0.0,
+            SituationType = candidate.SituationType,
+            Tone = candidate.Tone
         };
     }
 
-    private static string BuildShortReplyForMove(
-        string move,
-        MessageContext context,
-        string userDraft,
-        string sourceText)
+    private static string GeneratePostReply(MessageContext context)
     {
-        var author = context.SourceAuthor?.Trim();
-
-        return move switch
+        var prompt = (context.Message ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(prompt))
         {
-            "congratulate" =>
-                string.IsNullOrWhiteSpace(author)
-                    ? "Congrats on the milestone!"
-                    : $"Congrats, {author}!",
+            return "AI becomes useful when it changes execution, not when it stays inside a demo.\n\nThe teams pulling ahead are the ones connecting AI to real workflows, clear ownership, and measurable outcomes.\n\nThat shift is what turns experimentation into leverage.";
+        }
 
-            "appreciate" =>
-                "Clear and useful perspective.",
+        var topic = ExtractTopic(prompt);
+        var keywords = ExtractMeaningfulKeywords(prompt, limit: 3);
+        var hook = keywords.Count > 0
+            ? $"{Capitalize(keywords[0])} is where AI stops being a trend and starts becoming an operating decision."
+            : $"{Capitalize(topic)} is where execution starts to matter more than excitement.";
 
-            "ask_relevant_question" =>
-                "Curious — how does this play out in practice?",
+        var bodyAnchor = keywords.Count > 1 ? keywords[1] : topic;
+        var closingAnchor = keywords.Count > 2 ? keywords[2] : "execution";
 
-            "rewrite_user_intent" =>
-                RewriteStandaloneSentence(userDraft),
-
-            "draft_post" =>
-                (userDraft ?? string.Empty).Trim(),
-
-            "light_touch" =>
-                "Interesting direction — especially at scale.",
-
-            _ =>
-                "Thoughtful perspective."
-        };
+        return $"{hook}\n\nWhat usually slows teams down is not intent. It is the gap between experiments and repeatable workflows. That is why {bodyAnchor} matters so much: it forces clarity on who owns the process, how success is measured, and what should improve over time.\n\nThe strongest teams will treat AI like a capability they can operationalize, not just a feature they can announce. That is where {closingAnchor} starts compounding.";
     }
 
-    private static string RewriteUserDraft(
-        string draft,
-        string sourceText,
-        bool isFeedReply,
-        bool isCompose,
-        string? author)
+    private static string GenerateRewriteReply(MessageContext context)
     {
-        if (string.IsNullOrWhiteSpace(draft))
-            return string.Empty;
-
-        var cleanDraft = RewriteStandaloneSentence(draft);
-        if (cleanDraft.Length < 25)
+        var draft = (context.Message ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(draft) || IsCommandOnlyMessage(draft))
         {
-            cleanDraft = $"{cleanDraft} — this highlights a broader shift in how these systems are actually being deployed and scaled.";
+            return IsChatSurface(context)
+                ? GenerateChatReply(context)
+                : GenerateContextualReply(context);
         }
 
-        var topic = ExtractTopic(sourceText);
-
-        if (isCompose)
+        if (IsChatSurface(context))
         {
-            return $"{cleanDraft}\n\nWe’re moving into a phase where the real differentiator is no longer just experimentation — it’s deployment at scale. The advantage will go to the teams and ecosystems that can operationalize these shifts faster than everyone else.";
+            return RewriteStandaloneSentence(draft);
         }
 
-        if (isFeedReply && !string.IsNullOrWhiteSpace(sourceText))
+        if (string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.IsNullOrWhiteSpace(topic))
+            return GeneratePostReply(context);
+        }
+
+        var rewritten = RewriteStandaloneSentence(draft);
+        if (!HasContextAnchor(rewritten, context))
+        {
+            var anchor = ExtractPrimaryAnchor(context);
+            if (!string.IsNullOrWhiteSpace(anchor))
             {
-                return $"{cleanDraft} — it really shows how {topic} is becoming less about isolated innovation and more about scale, execution, and deployment speed.";
+                rewritten = $"{TrimEndingPunctuation(rewritten)} The part about {anchor} comes through clearly.";
             }
-
-            return $"{cleanDraft} — it really highlights how scale and execution are becoming the real differentiators here.";
         }
 
-        if (!string.IsNullOrWhiteSpace(author))
-        {
-            return $"{cleanDraft}, {author}.";
-        }
-
-        return cleanDraft;
+        return rewritten;
     }
 
-    private static string GenerateInsightReply(string sourceText, string userDraft)
+    private static string GenerateChatReply(MessageContext context)
     {
-        if (!string.IsNullOrWhiteSpace(userDraft))
+        var draft = (context.Message ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(draft) && !IsCommandOnlyMessage(draft))
         {
-            var rewritten = RewriteStandaloneSentence(userDraft);
-            if (!string.IsNullOrWhiteSpace(sourceText))
-            {
-                return $"{rewritten} — what stands out is how quickly the value compounds once deployment starts happening at scale.";
-            }
-
-            return rewritten;
+            return RewriteStandaloneSentence(draft);
         }
 
-        if (string.IsNullOrWhiteSpace(sourceText))
-            return "What stands out here is how much the real advantage comes from execution, not just the idea itself.";
+        var source = BuildSourceCorpus(context);
+        if (source.Contains("thank", StringComparison.OrdinalIgnoreCase))
+            return "Thank you, I really appreciate it.";
+        if (source.Contains("reconnect", StringComparison.OrdinalIgnoreCase))
+            return "Would be good to reconnect. Happy to catch up and hear what you're building.";
+        if (source.Contains("hiring", StringComparison.OrdinalIgnoreCase) || source.Contains("role", StringComparison.OrdinalIgnoreCase))
+            return "Thanks for reaching out. This sounds interesting and I'd be happy to hear more.";
+        if (source.Contains("birthday", StringComparison.OrdinalIgnoreCase))
+            return "Thank you so much. I really appreciate it.";
 
-        var topic = ExtractTopic(sourceText);
-
-        if (!string.IsNullOrWhiteSpace(topic))
-        {
-            return $"What stands out here is that {topic} is no longer just about the technology itself — the real edge comes from how fast it can be deployed and operationalized.";
-        }
-
-        return "What stands out here is not just the technology itself, but how quickly it is being deployed at scale — that is where the real competitive advantage begins to emerge in practice.";
+        return "Thanks, I appreciate the note.";
     }
 
-    private static string GenerateLightReply(string sourceText, string userDraft)
+    private static string GenerateAnswerReply(MessageContext context)
     {
-        if (!string.IsNullOrWhiteSpace(userDraft))
+        var anchor = ExtractPrimaryAnchor(context);
+        if (!string.IsNullOrWhiteSpace(anchor))
         {
-            return RewriteStandaloneSentence(userDraft);
+            return $"My take: start with the part of {anchor} that creates the biggest practical bottleneck, then build from there.";
         }
 
-        if (!string.IsNullOrWhiteSpace(sourceText))
-        {
-            return "Really interesting direction — the pace of real-world adoption here is what makes it especially impactful.";
-        }
-
-        return "Interesting direction — especially in how this can scale in practice.";
+        return "My take: start with the biggest practical bottleneck, then build from there.";
     }
 
-    private static string GenerateLightTouchQuestion(string sourceText)
+    private static string GenerateMilestoneReply(MessageContext context)
     {
-        if (string.IsNullOrWhiteSpace(sourceText))
-            return "Curious — where do you see this heading next?";
+        var author = (context.SourceAuthor ?? string.Empty).Trim();
+        var anchor = ExtractPrimaryAnchor(context);
+        var prefix = string.IsNullOrWhiteSpace(author) ? "Congratulations" : $"Congratulations {author}";
 
-        return "Where do you see the biggest real-world impact showing up first?";
-    }
-
-    private static string GenerateHelpfulReply(string draft, string sourceText)
-    {
-        if (!string.IsNullOrWhiteSpace(draft))
+        if (!string.IsNullOrWhiteSpace(anchor))
         {
-            var rewritten = RewriteStandaloneSentence(draft);
-
-            if (!string.IsNullOrWhiteSpace(sourceText))
-            {
-                return $"{rewritten} — one thing that stands out is how much the real impact will depend on speed of adoption and execution.";
-            }
-
-            return rewritten;
+            return $"{prefix}. The progress around {anchor} makes this milestone feel earned.";
         }
 
-        if (!string.IsNullOrWhiteSpace(sourceText))
-        {
-            return "One thing that stands out here is how quickly the impact compounds once adoption starts happening at scale.";
-        }
-
-        return "One thing to consider is how this evolves once it moves from idea to large-scale execution.";
+        return $"{prefix}. This milestone feels well earned.";
     }
 
-    private static string GeneratePost(string topic)
+    private static string GenerateAnnouncementReply(MessageContext context)
     {
-        if (string.IsNullOrWhiteSpace(topic))
-            return string.Empty;
-
-        var normalized = RewriteStandaloneSentence(topic);
-
-        return $"{normalized}\n\nWe are entering a phase where execution speed matters more than ideas alone. The real gap is no longer between those who understand the technology and those who do not — it is between those who can operationalize it at scale and those who cannot.\n\nThe next wave of advantage will come from deployment discipline, not just technical capability.";
-    }
-
-    private static string GeneratePostOutline(string topic)
-    {
-        if (string.IsNullOrWhiteSpace(topic))
-            return string.Empty;
-
-        var normalized = RewriteStandaloneSentence(topic);
-
-        return $"{normalized}\n\n1. What is changing right now\n2. Why this matters beyond the surface trend\n3. Where the real competitive advantage will come from\n4. What this means going forward";
-    }
-
-    private static string DefaultReply(
-        MessageContext context,
-        string userDraft,
-        string sourceText,
-        string situationType,
-        bool hasDraft)
-    {
-        if (hasDraft)
+        var anchor = ExtractPrimaryAnchor(context);
+        if (!string.IsNullOrWhiteSpace(anchor))
         {
-            return RewriteUserDraft(
-                userDraft,
-                sourceText,
-                string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase),
-                string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase),
-                context.SourceAuthor);
+            return $"{Capitalize(anchor)} looks like the kind of update that will matter more once it is live in the real workflow.";
         }
 
-        return situationType switch
-        {
-            "rewrite_feed_reply" => GenerateInsightReply(sourceText, userDraft),
-            "compose_post" => GeneratePost(context.Message ?? string.Empty),
-            "rewrite_direct_message" => RewriteStandaloneSentence(userDraft),
-            _ => GenerateFallbackReply(sourceText)
-        };
+        return "This update looks likely to matter once it is tested in the real workflow.";
     }
 
-    private static string GenerateFallbackReply(string sourceText)
+    private static string GenerateInsightReply(MessageContext context)
     {
-        if (string.IsNullOrWhiteSpace(sourceText))
-            return "Appreciate you sharing this.";
-
-        var lower = sourceText.ToLowerInvariant();
-
-        if (lower.Contains("award") ||
-            lower.Contains("recognition") ||
-            lower.Contains("milestone") ||
-            lower.Contains("employee of the quarter") ||
-            lower.Contains("congratulations"))
+        var anchor = ExtractPrimaryAnchor(context);
+        if (!string.IsNullOrWhiteSpace(anchor))
         {
-            return "Congratulations on this well-deserved recognition.";
+            return $"The constraint around {anchor} usually shows up once it has to hold up in real execution, not in the first draft of the idea.";
         }
 
-        if (lower.Contains("?"))
-        {
-            return "Interesting question — there’s a lot in how this plays out in practice.";
-        }
-
-        return "Appreciate you sharing this.";
+        return "The real challenge usually shows up in execution, where coordination and trade-offs become visible.";
     }
 
-    private static string BuildFallbackReply(
-        string move,
-        MessageContext context,
-        string situationType)
+    private static string GenerateContextualReply(MessageContext context)
     {
-        var author = context.SourceAuthor?.Trim();
-        var sourceText = context.SourceText ?? string.Empty;
-        var lower = sourceText.ToLowerInvariant();
-
-        if (string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(situationType, "direct_message", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(situationType, "rewrite_direct_message", StringComparison.OrdinalIgnoreCase))
+        var anchor = ExtractPrimaryAnchor(context);
+        if (!string.IsNullOrWhiteSpace(anchor))
         {
-            if (lower.Contains("birthday"))
-            {
-                return string.IsNullOrWhiteSpace(author)
-                    ? "Thanks so much for the birthday wishes! I really appreciate it."
-                    : $"Thanks so much for the birthday wishes, {author}! I really appreciate it.";
-            }
-
-            return string.IsNullOrWhiteSpace(author)
-                ? "Thanks so much — I really appreciate it."
-                : $"Thanks so much, {author} — I really appreciate it.";
+            return $"The practical value of {anchor} usually becomes clearer once people have to work through the trade-offs around it.";
         }
 
+        return "The practical value usually becomes clearer once the trade-offs have to be worked through.";
+    }
+
+    private static string GenerateSupportReply(MessageContext context)
+    {
+        var anchor = ExtractPrimaryAnchor(context);
+        if (!string.IsNullOrWhiteSpace(anchor))
+        {
+            return $"You are moving in a strong direction. Staying close to {anchor} should create real momentum.";
+        }
+
+        return "You are moving in a strong direction. This should create real momentum.";
+    }
+
+    private static string GenerateFallbackReply(MessageContext context)
+    {
+        if (string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase))
+            return GeneratePostReply(context);
+
+        if (IsChatSurface(context))
+            return GenerateChatReply(context);
+
+        return GenerateContextualReply(context);
+    }
+
+    private static string BuildSafeFallbackReply(MessageContext context, string move)
+    {
         if (string.Equals(context.Surface, "feed_reply", StringComparison.OrdinalIgnoreCase))
         {
-            if (lower.Contains("award") ||
-                lower.Contains("recognition") ||
-                lower.Contains("employee of the quarter") ||
-                lower.Contains("milestone") ||
-                lower.Contains("congratulations"))
+            var anchor = ExtractPrimaryAnchor(context);
+            if (!string.IsNullOrWhiteSpace(anchor))
             {
-                return "Congratulations on this well-deserved recognition.";
+                return $"The part about {anchor} gets more interesting once it has to hold up in day-to-day execution.";
             }
 
-            if (lower.Contains("?"))
-            {
-                return "Really interesting question — I think a lot depends on how this plays out in practice.";
-            }
-
-            return "Appreciate you sharing this.";
+            return "The practical implication gets more interesting once it has to hold up in day-to-day execution.";
         }
 
-        return move switch
+        if (IsChatSurface(context))
         {
-            "congratulate" => "Congratulations on this well-deserved milestone.",
-            "congratulate_encourage" => "Congratulations on this milestone. Wishing you continued success ahead.",
-            "appreciate_journey" => "The journey behind this really comes through clearly.",
-            "express_interest" => "This looks genuinely interesting. I'd love to learn more.",
-            "answer_supportively" => "That's a thoughtful question. A lot depends on how it plays out in practice.",
-            "ask_relevant_question" => "What has been the biggest learning from this so far?",
-            _ => "Appreciate you sharing this."
-        };
+            return GenerateChatReply(context);
+        }
+
+        if (string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase) || move == "draft_post")
+        {
+            return GeneratePostReply(context);
+        }
+
+        return "There is a practical angle here that becomes clearer once it reaches real use.";
+    }
+
+    private static string FinalizeReply(string reply, MessageContext context, string move)
+    {
+        if (string.Equals(move, "no_reply", StringComparison.OrdinalIgnoreCase))
+            return string.Empty;
+
+        var sanitized = SanitizeReply(reply, context);
+        if (!IsChatSurface(context) &&
+            !string.Equals(context.Surface, "start_post", StringComparison.OrdinalIgnoreCase) &&
+            !HasContextAnchor(sanitized, context))
+        {
+            var anchor = ExtractPrimaryAnchor(context);
+            if (!string.IsNullOrWhiteSpace(anchor))
+            {
+                sanitized = $"{TrimEndingPunctuation(sanitized)} The part about {anchor} stands out.";
+            }
+        }
+
+        return sanitized;
+    }
+
+    private static string SanitizeReply(string reply, MessageContext context)
+    {
+        if (string.IsNullOrWhiteSpace(reply))
+            return string.Empty;
+
+        var sanitized = reply.Trim();
+        sanitized = sanitized.Trim('"', '\'', '“', '”');
+        sanitized = Regex.Replace(sanitized, @"[ \t]{2,}", " ");
+        sanitized = Regex.Replace(sanitized, @"\s+\n", "\n");
+        sanitized = Regex.Replace(sanitized, @"\n{3,}", "\n\n");
+
+        if (!(context.Message ?? string.Empty).Contains('#'))
+        {
+            sanitized = Regex.Replace(sanitized, @"#\w+", string.Empty).Trim();
+            sanitized = Regex.Replace(sanitized, @"[ \t]{2,}", " ");
+            sanitized = Regex.Replace(sanitized, @"\n{3,}", "\n\n");
+        }
+
+        return sanitized.Trim();
     }
 
     private static bool IsGenericReply(string reply)
     {
-        var text = reply.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(reply))
+            return true;
 
-        var forbiddenPhrases = new[]
-        {
-            "great post", "well said", "thanks for sharing", "interesting perspective", "nice breakdown",
-            "good point", "so true", "very insightful", "thoughtful perspective", "interesting direction",
-            "clear framing", "useful framing", "great perspective", "well put", "spot on",
-            "deployment speed", "operationalize", "scale", "execution layer" // task banned generics
-        };
-
-        return forbiddenPhrases.Any(text.Contains);
+        var normalized = reply.Trim().ToLowerInvariant();
+        return GenericReplies.Any(phrase => normalized.Contains(phrase)) || normalized.Length < 12;
     }
 
-    private static bool ShouldPolish(string reply)
+    private static bool HasContextAnchor(string reply, MessageContext context)
     {
         if (string.IsNullOrWhiteSpace(reply))
             return false;
 
-        return reply.Length > 80;
+        var replyText = reply.ToLowerInvariant();
+        return ExtractContextKeywords(context).Any(keyword => replyText.Contains(keyword, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static double EstimateConfidence(string move, string reply, bool hasDraft, string sourceText)
+    private static bool PassesReplyQuality(string reply, MessageContext context, string move)
     {
         if (string.Equals(move, "no_reply", StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(reply);
+
+        if (string.IsNullOrWhiteSpace(reply))
+            return false;
+
+        if (reply.Length is < 8 or > 600)
+            return false;
+
+        if (IsGenericReply(reply) && !HasContextAnchor(reply, context))
+            return false;
+
+        if (ForcedCtaEndings.Any(ending => reply.EndsWith(ending, StringComparison.OrdinalIgnoreCase)) &&
+            !UserAskedForEngagement(context))
+            return false;
+
+        if (FormalAiPhrases.Any(phrase => reply.Contains(phrase, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        return true;
+    }
+
+    private static bool UserAskedForEngagement(MessageContext context)
+    {
+        var combined = BuildSourceCorpus(context);
+        return combined.Contains("what do you think", StringComparison.OrdinalIgnoreCase) ||
+               combined.Contains("thoughts?", StringComparison.OrdinalIgnoreCase) ||
+               combined.Contains("agree?", StringComparison.OrdinalIgnoreCase) ||
+               combined.Contains("share your", StringComparison.OrdinalIgnoreCase) ||
+               combined.Contains("comment below", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ExtractPrimaryAnchor(MessageContext context)
+    {
+        return ExtractContextKeywords(context).FirstOrDefault() ?? string.Empty;
+    }
+
+    private static List<string> ExtractContextKeywords(MessageContext context)
+    {
+        var values = new[]
+        {
+            context.SourceText,
+            context.SourceTitle,
+            context.SourceAuthor,
+            context.ParentContextText,
+            context.Message
+        };
+
+        return values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .SelectMany(value => Regex.Matches(value!, @"[A-Za-z0-9][A-Za-z0-9'\-/+]{3,}")
+                .Select(match => match.Value.ToLowerInvariant()))
+            .Where(token => token.Length >= 4)
+            .Where(token => !StopWords.Contains(token))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList();
+    }
+
+    private static List<string> ExtractMeaningfulKeywords(string text, int limit)
+    {
+        return Regex.Matches(text, @"[A-Za-z0-9][A-Za-z0-9'\-/+]{3,}")
+            .Select(match => match.Value.ToLowerInvariant())
+            .Where(token => !StopWords.Contains(token))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .ToList();
+    }
+
+    private static string BuildSourceCorpus(MessageContext context)
+    {
+        return string.Join(" ",
+            context.SourceText ?? string.Empty,
+            context.SourceTitle ?? string.Empty,
+            context.SourceAuthor ?? string.Empty,
+            context.ParentContextText ?? string.Empty,
+            context.NearbyContextText ?? string.Empty,
+            context.Message ?? string.Empty);
+    }
+
+    private static string BuildShortReply(string move, string reply, MessageContext context)
+    {
+        if (string.IsNullOrWhiteSpace(reply))
+            return string.Empty;
+
+        if (move == "draft_post")
+        {
+            return (context.Message ?? string.Empty).Trim();
+        }
+
+        var firstSentence = Regex.Split(reply, @"(?<=[.!?])\s+").FirstOrDefault() ?? reply;
+        return firstSentence.Length <= 120 ? firstSentence : firstSentence[..120].Trim();
+    }
+
+    private static double EstimateConfidence(string move, string reply, bool hasUserDraft, MessageContext context)
+    {
+        if (move == "no_reply")
             return 0.50;
 
         if (string.IsNullOrWhiteSpace(reply))
-            return 0.25;
+            return 0.20;
 
-        if ((string.Equals(move, "rewrite_user_intent", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(move, "draft_post", StringComparison.OrdinalIgnoreCase)) && hasDraft)
+        if (hasUserDraft && move is "rewrite_user_intent" or "draft_post")
             return 0.92;
 
-        if (!string.IsNullOrWhiteSpace(sourceText) && reply.Length > 40)
-            return 0.88;
+        if (HasContextAnchor(reply, context))
+            return 0.86;
 
-        return 0.80;
+        return 0.74;
+    }
+
+    private static bool IsChatSurface(MessageContext context)
+    {
+        return string.Equals(context.InteractionMode, "chat", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(context.Surface, "messaging_chat", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(context.Surface, "direct_message", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCommandOnlyMessage(string? message)
+    {
+        var normalized = (message ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized is "reply" or "write reply" or "suggest reply" or "comment" or "write comment" or "make a comment";
+    }
+
+    private static string NormalizeMove(string? move)
+    {
+        return (move ?? string.Empty).Trim().ToLowerInvariant();
     }
 
     private static string RewriteStandaloneSentence(string text)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        var cleaned = Regex.Replace((text ?? string.Empty).Trim(), @"\s+", " ");
+        if (string.IsNullOrWhiteSpace(cleaned))
             return string.Empty;
-
-        var cleaned = Regex.Replace(text.Trim(), "\\s+", " ");
 
         cleaned = cleaned.Replace("Im ", "I'm ", StringComparison.OrdinalIgnoreCase);
-        cleaned = cleaned.Replace(" i ", " I ", StringComparison.Ordinal);
-        cleaned = cleaned.Trim();
+        cleaned = Capitalize(cleaned);
 
-        if (cleaned.Length == 0)
-            return string.Empty;
-
-        cleaned = char.ToUpperInvariant(cleaned[0]) + cleaned[1..];
-
-        if (!cleaned.EndsWith(".") &&
-            !cleaned.EndsWith("!") &&
-            !cleaned.EndsWith("?"))
-        {
+        if (!cleaned.EndsWith(".") && !cleaned.EndsWith("!") && !cleaned.EndsWith("?"))
             cleaned += ".";
-        }
 
         return cleaned;
     }
 
-    private static string ExtractTopic(string source)
+    private static string ExtractTopic(string text)
     {
-        if (string.IsNullOrWhiteSpace(source))
+        var cleaned = (text ?? string.Empty).Trim();
+        var lower = cleaned.ToLowerInvariant();
+        var prefixes = new[]
         {
+            "write a linkedin post on ",
+            "write a post on ",
+            "draft a linkedin post on ",
+            "draft a post on ",
+            "create a post on ",
+            "linkedin post on ",
+            "post on "
+        };
+
+        foreach (var prefix in prefixes)
+        {
+            if (lower.StartsWith(prefix, StringComparison.Ordinal))
+                return cleaned[prefix.Length..].Trim(' ', '.', ':');
+        }
+
+        return cleaned.Trim(' ', '.', ':');
+    }
+
+    private static string TrimEndingPunctuation(string text)
+    {
+        return (text ?? string.Empty).Trim().TrimEnd('.', '!', '?');
+    }
+
+    private static string Capitalize(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
             return string.Empty;
-        }
 
-        var patterns = new[]
-        {
-            @"\b(?:how do you|how can you|how would you)\s+(?:handle|manage|approach|think about)\s+([a-zA-Z0-9\s\-]+?)(?:[\?\.!]|$)",
-            @"\b(?:what(?:'s| is) your take on|what do you think about|what are your thoughts on)\s+([a-zA-Z0-9\s\-]+?)(?:[\?\.!]|$)",
-            @"\b(?:about|on|of|for|in|regarding)\s+([a-zA-Z0-9\s\-]+?)(?:[\?\.!]|$)",
-            @"\b(topic|concept|idea):\s*([a-zA-Z0-9\s\-]+)"
-        };
-
-        foreach (var pattern in patterns)
-        {
-            var match = Regex.Match(source, pattern, RegexOptions.IgnoreCase);
-            if (match.Success)
-            {
-                var groupValue = match.Groups.Count > 2 ? match.Groups[2].Value : match.Groups[1].Value;
-                var topic = Regex.Replace(groupValue.Trim(), "\\s+", " ");
-                if (topic.Length > 0 && topic.Length <= 60)
-                {
-                    return topic;
-                }
-            }
-        }
-
-        var fallback = Regex.Match(source, @"\b([A-Za-z0-9\-]{4,})(?:\s+[A-Za-z0-9\-]{4,})?", RegexOptions.IgnoreCase);
-        return fallback.Success ? fallback.Value : string.Empty;
-    }
-
-    private static string BuildFramedQuestion(MessageContext context, string move)
-    {
-        var framing = GenerateFramingLine(context);
-        var question = GenerateQuestionLine(context, move);
-
-        if (string.IsNullOrWhiteSpace(framing))
-            return question;
-
-        return $"{framing}\n\n{question}";
-    }
-
-    private static string GenerateFramingLine(MessageContext context)
-    {
-        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty}".ToLowerInvariant();
-
-        if (context.SituationType == "recruitment" || source.Contains("graduates") || source.Contains("career changers"))
-            return "Programs like this do a good job closing the gap between learning and real-world delivery.";
-
-        if (context.SituationType == "educational")
-            return "The strongest part of programs like this is usually the transition from theory into live execution.";
-
-        if (context.SituationType == "opinion")
-            return "That's a useful framing—especially where execution depends on more than the surface idea.";
-
-        if (context.SituationType == "milestone")
-            return "What stands out here is how much structured exposure can accelerate real growth early on.";
-
-        return string.Empty;
-    }
-
-    private static string GenerateQuestionLine(MessageContext context, string move)
-    {
-        var angle = InferQuestionAngle(context);
-
-        return angle switch
-        {
-            "transition" => "I'm curious—what tends to be the hardest part when people move from structured learning into actual client work?",
-            "constraint" => "I'm curious—where do graduates or career-changers usually hit the biggest execution constraints once they join live projects?",
-            "pattern" => "I'm curious—what pattern shows up most often in the people who adapt quickly versus those who take longer?",
-            "tradeoff" => "I'm curious—what's the hardest balance to get right between learning support and real project expectations?",
-            "selection" => "I'm curious—what tends to separate the people who ramp successfully from those who struggle early on?",
-            _ => "I'm curious—what tends to be the hardest part when people enter real-world delivery for the first time?"
-        };
-    }
-
-    private static string InferQuestionAngle(MessageContext context)
-    {
-        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty}".ToLowerInvariant();
-
-        if (source.Contains("client") || source.Contains("real-world") || source.Contains("actual client work"))
-            return "transition";
-
-        if (source.Contains("mentorship") || source.Contains("structured learning"))
-            return "tradeoff";
-
-        if (source.Contains("graduates") || source.Contains("career changers"))
-            return "selection";
-
-        if (source.Contains("ai") || source.Contains("responsibly") || source.Contains("pairing"))
-            return "constraint";
-
-        return "pattern";
-    }
-
-    private static bool IsCtaEngagementPost(MessageContext context)
-    {
-        var source = string.Join(" ",
-            context.SourceTitle ?? string.Empty,
-            context.SourceText ?? string.Empty,
-            context.ParentContextText ?? string.Empty,
-            context.NearbyContextText ?? string.Empty)
-            .ToLowerInvariant();
-
-        var signals = new[]
-        {
-            "drop in the comments",
-            "comment below",
-            "let me know",
-            "tell me",
-            "where are you right now",
-            "which skill",
-            "what are you learning next",
-            "what are you working on",
-            "share in the comments",
-            "comment your",
-            "reply with",
-            "what's your next step"
-        };
-
-        return signals.Any(signal => source.Contains(signal));
-    }
-
-    private static bool RequiresCtaPositioning(MessageContext context)
-    {
-        return IsCtaEngagementPost(context);
-    }
-
-    private static string BuildCtaParticipationReply(MessageContext context)
-    {
-        var role = InferCtaRole(context);
-        var skill = InferCtaSkill(context);
-        var concept = InferCtaConcept(skill);
-        var skillText = string.IsNullOrWhiteSpace(skill) ? "the next area I'm focusing on" : skill;
-
-        return $"I'm currently coming from the {role} side, and {skillText} is the next area I'm focusing on. It feels like that's where the shift moves from theory into {concept}.";
-    }
-
-    private static string InferCtaRole(MessageContext context)
-    {
-        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty} {context.ParentContextText ?? string.Empty} {context.NearbyContextText ?? string.Empty}".ToLowerInvariant();
-
-        if (source.Contains("sysadmin"))
-            return "sysadmin";
-        if (source.Contains("engineer"))
-            return "engineering";
-        if (source.Contains("developer"))
-            return "developer";
-        if (source.Contains("manager"))
-            return "manager";
-
-        return "developer";
-    }
-
-    private static string InferCtaSkill(MessageContext context)
-    {
-        var source = $"{context.SourceTitle ?? string.Empty} {context.SourceText ?? string.Empty} {context.ParentContextText ?? string.Empty} {context.NearbyContextText ?? string.Empty}".ToLowerInvariant();
-        var skills = new[] { "kubernetes", "terraform", "docker", "observability", "sre", "security", "ci/cd", "platform" };
-
-        foreach (var skill in skills)
-        {
-            if (source.Contains(skill))
-                return skill;
-        }
-
-        return string.Empty;
-    }
-
-    private static string InferCtaConcept(string skill)
-    {
-        var s = (skill ?? string.Empty).ToLowerInvariant();
-
-        if (s.Contains("kubernetes"))
-            return "orchestration and reliability";
-        if (s.Contains("terraform"))
-            return "infrastructure thinking at scale";
-        if (s.Contains("docker"))
-            return "repeatable deployment patterns";
-        if (s.Contains("observability"))
-            return "system visibility and operational feedback";
-        if (s.Contains("sre"))
-            return "reliability and production discipline";
-
-        return "real-world delivery";
+        return text.Length == 1
+            ? text.ToUpperInvariant()
+            : char.ToUpperInvariant(text[0]) + text[1..];
     }
 }

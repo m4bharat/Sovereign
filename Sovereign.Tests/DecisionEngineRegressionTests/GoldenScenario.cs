@@ -1,7 +1,7 @@
-using System.Collections.Generic;
+using Sovereign.Domain.DTOs;
 using Sovereign.Intelligence.DecisionV2;
 
-namespace Sovereign.Intelligence.Evaluation;
+namespace Sovereign.Tests.DecisionEngineRegressionTests;
 
 public sealed class GoldenScenario
 {
@@ -17,9 +17,4 @@ public sealed class GoldenScenario
     public string SourceTitle { get; init; } = string.Empty;
     public string ExpectedSituationType { get; init; } = string.Empty;
     public DecisionV2Input InputPayload { get; init; } = new();
-}
-
-public static class GoldenScenarioDataset
-{
-    public static IReadOnlyList<GoldenScenario> Empty => [];
 }

@@ -44,10 +44,10 @@ function normalizeRequestBody(settings, payload) {
 
     return {
         UserId: p.UserId || p.userId || settings.sovereignUserId || "user-001",
-        ContactId: p.ContactId || p.contactId || "linkedin-compose-contact",
+        ContactId: p.ContactId || p.contactId || "social-compose-contact",
         Message: p.Message || p.message || "",
         RelationshipRole: p.RelationshipRole || p.relationshipRole || "Peer",
-        Platform: p.Platform || p.platform || "linkedin",
+        Platform: p.Platform || p.platform || "social",
         Surface: p.Surface || p.surface || "post_compose",
         CurrentUrl: p.CurrentUrl || p.currentUrl || "",
         SourceAuthor: p.SourceAuthor || p.sourceAuthor || "",
@@ -66,16 +66,24 @@ function extractErrorMessage(status, data, rawText) {
     return `HTTP ${status}`;
 }
 
-async function focusBestLinkedInTab() {
-    const tabs = await chrome.tabs.query({ url: "https://www.linkedin.com/*" });
+async function focusBestSocialTab() {
+    const tabGroups = await Promise.all([
+        chrome.tabs.query({ url: "https://www.linkedin.com/*" }),
+        chrome.tabs.query({ url: "https://x.com/*" }),
+        chrome.tabs.query({ url: "https://www.x.com/*" }),
+        chrome.tabs.query({ url: "https://x.xom/*" }),
+        chrome.tabs.query({ url: "https://www.x.xom/*" })
+    ]);
+
+    const tabs = tabGroups.flat();
     if (!tabs.length) return;
 
-    const activeLinkedInTab = tabs.find((t) => t.active) || tabs[0];
-    if (activeLinkedInTab.windowId != null) {
-        await chrome.windows.update(activeLinkedInTab.windowId, { focused: true });
+    const activeTab = tabs.find((t) => t.active) || tabs[0];
+    if (activeTab.windowId != null) {
+        await chrome.windows.update(activeTab.windowId, { focused: true });
     }
-    if (activeLinkedInTab.id != null) {
-        await chrome.tabs.update(activeLinkedInTab.id, { active: true });
+    if (activeTab.id != null) {
+        await chrome.tabs.update(activeTab.id, { active: true });
     }
 }
 
@@ -117,7 +125,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === "SOVEREIGN_AUTH_COMPLETED") {
-        focusBestLinkedInTab()
+        focusBestSocialTab()
             .then(() => sendResponse({ ok: true }))
             .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
         return true;

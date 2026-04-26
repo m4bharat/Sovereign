@@ -30,5 +30,7 @@ public sealed class CandidateScore
     public double ComposePostBoost { get; set; }
     public double NoReplyPenalty { get; set; }
     public double RewriteFeedReplyBoost { get; set; }
+    public double FamilyMatchBoost { get; set; }
+    public string DisqualifiedReason { get; set; } = string.Empty;
 }
 

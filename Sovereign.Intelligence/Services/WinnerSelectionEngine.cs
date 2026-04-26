@@ -6,157 +6,183 @@ namespace Sovereign.Intelligence.Services;
 
 public sealed class WinnerSelectionEngine : IWinnerSelectionEngine
 {
-    public WinnerSelectionResult SelectBest(IReadOnlyList<CandidateScore> scoredCandidates, MessageContext context)
+    public WinnerSelectionResult SelectBest(
+        IReadOnlyList<CandidateScore> scores,
+        SocialSituation situation,
+        MessageContext context)
     {
-        var situationType = (context.SituationType ?? "").ToLowerInvariant();
-
-        // ===== FAMILY-PRE-FILTER (task: family first) =====
-        var preferredFamilies = GetPreferredFamilies(situationType);
-        var familyCandidates = scoredCandidates.Where(s => preferredFamilies.Contains(s.Candidate.Move.ToLowerInvariant()));
-
-        if (familyCandidates.Any())
+        var winner = SelectWinnerScore(scores, situation, context);
+        return new WinnerSelectionResult
         {
-            // Within family, best score
-            var familyBest = familyCandidates.OrderByDescending(s => s.ComputedTotal).First().Candidate;
-            return new WinnerSelectionResult
-            {
-                Winner = familyBest,
-                Alternatives = scoredCandidates
-                    .Where(s => s.Candidate.Move != familyBest.Move)
-                    .OrderByDescending(s => s.ComputedTotal)
-                    .Take(2)
-                    .Select(s => s.Candidate)
-                    .ToArray()
-            };
-        }
-
-        // Fallback: highest total passing gates
-        var viable = scoredCandidates.Where(s => s.ComputedTotal > 0.0).OrderByDescending(s => s.ComputedTotal).ToArray();
-
-        if (viable.Length == 0)
-        {
-            return new WinnerSelectionResult
-            {
-                Winner = new SocialMoveCandidate { Move = "no_reply", Rationale = "No viable candidates" },
-                Alternatives = Array.Empty<SocialMoveCandidate>()
-            };
-        }
-
-        var winner = viable[0].Candidate;
-        var alternatives = viable.Skip(1).Take(2).Select(s => s.Candidate).ToArray();
-
-        return new WinnerSelectionResult { Winner = winner, Alternatives = alternatives };
-    }
-
-    private static string[] GetPreferredFamilies(string situationType)
-    {
-        return situationType switch
-        {
-            "achievement_share" => new[] { "praise" },
-            "personal_update" => new[] { "congratulate" },
-            "cta_engagement" => new[] { "answer_supportively" },
-            "defer_no_reply" or "controversial_no_reply" => new[] { "no_reply" },
-            _ => new[] { "appreciate" }
+            Winner = winner.Candidate,
+            Alternatives = BuildAlternatives(scores, winner, context)
         };
     }
 
-    private static bool IsLowQualityQuestion(CandidateScore score)
+    public WinnerSelectionResult SelectBest(
+        IReadOnlyList<CandidateScore> scores,
+        MessageContext context)
     {
-        if (score.Candidate.Move != "ask_relevant_question")
-            return false;
+        return SelectBest(scores, new SocialSituation { Type = context.SituationType ?? string.Empty }, context);
+    }
 
-        var reply = (score.Candidate.Reply ?? string.Empty).Trim().ToLowerInvariant();
+    private static CandidateScore SelectWinnerScore(
+        IReadOnlyList<CandidateScore> scores,
+        SocialSituation situation,
+        MessageContext context)
+    {
+        if (scores == null || scores.Count == 0)
+            return BuildNoReplyFallback("No candidates were available.");
 
-        if (IsBareQuestion(reply) && RequiresFraming(score))
-            return true;
+        var mustReply = MustReplyForSurface(context);
+        var qualified = scores
+            .Where(IsQualified)
+            .Where(score => !HasEmptyRequiredReply(score))
+            .OrderByDescending(score => score.ComputedTotal)
+            .ToList();
 
-        var genericStems = new[]
+        if (qualified.Count == 0)
+            return BuildFallback(scores, mustReply);
+
+        if (mustReply)
         {
-            "what do you think",
-            "can you share more",
-            "would love to hear",
-            "what has your experience been",
-            "what's the biggest challenge"
+            var bestNonNoReply = qualified
+                .Where(score => !IsNoReply(score))
+                .OrderByDescending(score => score.ComputedTotal)
+                .FirstOrDefault();
+
+            if (bestNonNoReply is not null && bestNonNoReply.ComputedTotal >= 0.45)
+            {
+                qualified = qualified.Where(score => !IsNoReply(score)).ToList();
+            }
+        }
+
+        if (qualified.Count == 0)
+            return BuildFallback(scores, mustReply);
+
+        var top = qualified[0];
+        if (qualified.Count == 1)
+            return top;
+
+        var runnerUp = qualified[1];
+        var gap = Math.Abs(top.ComputedTotal - runnerUp.ComputedTotal);
+        if (gap < 0.08 && !string.IsNullOrWhiteSpace(context.Message))
+        {
+            return CompareByDraftPreference(top, runnerUp) <= 0 ? top : runnerUp;
+        }
+
+        return top;
+    }
+
+    private static IReadOnlyList<SocialMoveCandidate> BuildAlternatives(
+        IReadOnlyList<CandidateScore> scores,
+        CandidateScore winner,
+        MessageContext context)
+    {
+        return scores
+            .Where(score => !ReferenceEquals(score, winner))
+            .Where(IsQualified)
+            .Where(score => !HasEmptyRequiredReply(score))
+            .Where(score => !MustReplyForSurface(context) || !IsNoReply(score))
+            .OrderByDescending(score => score.ComputedTotal)
+            .Select(score => score.Candidate)
+            .Take(3)
+            .ToArray();
+    }
+
+    private static CandidateScore BuildFallback(IReadOnlyList<CandidateScore> scores, bool mustReply)
+    {
+        var bestNonNoReply = scores
+            .Where(score => !IsNoReply(score))
+            .Where(score => !HasEmptyRequiredReply(score))
+            .OrderByDescending(score => score.ComputedTotal)
+            .FirstOrDefault();
+
+        if (bestNonNoReply is not null)
+            return bestNonNoReply;
+
+        if (!mustReply)
+            return BuildNoReplyFallback("No candidate met the minimum threshold.");
+
+        return new CandidateScore
+        {
+            Candidate = new SocialMoveCandidate
+            {
+                Move = "rewrite_user_intent",
+                Reply = "Thanks, I appreciate it.",
+                Rationale = "Safe rewrite fallback because the required-reply surface had no qualified winner."
+            },
+            ComputedTotal = 0.45
         };
-
-        return genericStems.Any(stem => reply.Contains(stem));
     }
 
-    private static bool IsBareQuestion(string reply)
+    private static CandidateScore BuildNoReplyFallback(string rationale)
     {
-        var text = reply.Trim();
-        if (!text.EndsWith("?"))
-            return false;
-
-        return !text.Contains(".") && !text.Contains("\n\n");
-    }
-
-    private static bool RequiresFraming(CandidateScore score)
-    {
-        return false;
-    }
-
-    private static readonly string[] CtaSignals =
-    {
-        "drop in the comments",
-        "comment below",
-        "let me know",
-        "tell me",
-        "where are you right now",
-        "which skill",
-        "what are you learning next",
-        "what are you working on",
-        "share in the comments",
-        "comment your",
-        "reply with",
-        "what's your next step"
-    };
-
-    private static bool IsCtaEngagementPost(MessageContext context)
-    {
-        var source = string.Join(" ",
-            context.SourceTitle ?? string.Empty,
-            context.SourceText ?? string.Empty,
-            context.ParentContextText ?? string.Empty,
-            context.NearbyContextText ?? string.Empty)
-            .ToLowerInvariant();
-
-        return CtaSignals.Any(signal => source.Contains(signal));
-    }
-
-    private static bool MeetsCtaThresholds(CandidateScore score)
-    {
-        return score.CTAResponseQuality >= 0.24 &&
-               (score.PositioningStrength >= 0.18 || score.InsightDepth >= 0.18) &&
-               score.ParticipationWithoutPositionPenalty <= 0.40;
-    }
-
-    private static bool IsDisqualifiedForCtaPost(
-        SocialMoveCandidate candidate,
-        MessageContext context,
-        CandidateScore score)
-    {
-        if (!IsCtaEngagementPost(context))
-            return false;
-
-        var reply = (candidate.Reply ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(reply))
-            return false;
-
-        if (score.ParticipationWithoutPositionPenalty >= 0.45 &&
-            score.PositioningStrength <= 0.16 &&
-            score.InsightDepth <= 0.16)
+        return new CandidateScore
         {
-            return true;
-        }
+            Candidate = new SocialMoveCandidate
+            {
+                Move = "no_reply",
+                Reply = string.Empty,
+                Rationale = rationale
+            },
+            ComputedTotal = 0.0
+        };
+    }
 
-        if (reply.StartsWith("Great question", StringComparison.OrdinalIgnoreCase) &&
-            score.PositioningStrength <= 0.18 &&
-            score.CTAResponseQuality <= 0.30)
+    private static bool IsQualified(CandidateScore score)
+    {
+        return score is not null &&
+               string.IsNullOrWhiteSpace(score.DisqualifiedReason) &&
+               score.ComputedTotal > 0.0 &&
+               score.HallucinationPenalty < 0.45 &&
+               score.GenericPenalty < 0.60;
+    }
+
+    private static bool HasEmptyRequiredReply(CandidateScore score)
+    {
+        return !IsNoReply(score) && string.IsNullOrWhiteSpace(score.Candidate.Reply);
+    }
+
+    private static bool IsNoReply(CandidateScore score)
+    {
+        return string.Equals(score.Candidate.Move, "no_reply", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CompareByDraftPreference(CandidateScore left, CandidateScore right)
+    {
+        return GetDraftPriority(left.Candidate.Move).CompareTo(GetDraftPriority(right.Candidate.Move));
+    }
+
+    private static int GetDraftPriority(string? move)
+    {
+        var normalized = (move ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
         {
-            return true;
-        }
+            "rewrite_user_intent" or "rewrite" or "polish" or "improve_draft" => 0,
+            "helpful_reply" or "respond_helpfully" or "reply" or "answer_supportively" or "add_insight" or "add_specific_insight" or "acknowledge" or "appreciate" or "praise" or "congratulate" => 1,
+            "draft_post" or "compose_post" or "create_post" => 2,
+            "no_reply" => 3,
+            _ => 2
+        };
+    }
 
-        return false;
+    private static bool MustReplyForSurface(MessageContext context)
+    {
+        var surface = (context.Surface ?? string.Empty).Trim().ToLowerInvariant();
+        var hasMessage = !string.IsNullOrWhiteSpace(context.Message);
+        var hasSourceText = !string.IsNullOrWhiteSpace(context.SourceText);
+        var allowNoReply = context.InteractionMetadata is not null &&
+                           context.InteractionMetadata.TryGetValue("allow_no_reply", out var raw) &&
+                           bool.TryParse(raw, out var parsed) &&
+                           parsed;
+
+        return surface switch
+        {
+            "feed_reply" => hasMessage && hasSourceText,
+            "start_post" => hasMessage,
+            "messaging_chat" => hasMessage && !allowNoReply,
+            _ => false
+        };
     }
 }

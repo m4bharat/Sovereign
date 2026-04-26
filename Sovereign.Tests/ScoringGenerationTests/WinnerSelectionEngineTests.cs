@@ -1,8 +1,7 @@
-using System.Collections.Generic;
-using Xunit;
 using Sovereign.Domain.Models;
-using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
+using Sovereign.Intelligence.Services;
+using Xunit;
 
 namespace Sovereign.Tests.ScoringGenerationTests;
 
@@ -11,121 +10,83 @@ public class WinnerSelectionEngineTests
     private readonly WinnerSelectionEngine _engine = new();
 
     [Fact]
-    public void SelectBest_ShouldReturnNoReply_WhenAllScoresBelowThreshold()
+    public void SelectBest_ShouldAvoidNoReply_WhenRequiredSurfaceHasUsableAlternative()
     {
-        // Arrange
-        var scores = new List<CandidateScore>
-        {
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, ComputedTotal = 0.4, Tone = 0.3, HallucinationPenalty = 0.2 },
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, ComputedTotal = 0.44, Tone = 0.3, HallucinationPenalty = 0.2 }
-        };
+        var result = _engine.SelectBest(
+            [
+                new CandidateScore
+                {
+                    Candidate = new SocialMoveCandidate { Move = "no_reply", Reply = string.Empty },
+                    ComputedTotal = 0.05
+                },
+                new CandidateScore
+                {
+                    Candidate = new SocialMoveCandidate { Move = "helpful_reply", Reply = "Thank you, I really appreciate it." },
+                    ComputedTotal = 0.46
+                }
+            ],
+            new SocialSituation { Type = "direct_message" },
+            CreateContext("messaging_chat", "thank you really appreciate it", allowNoReply: false));
 
-        // Act
-        var result = _engine.SelectBest(scores, new MessageContext());
-
-        // Assert
-        Assert.Equal("no_reply", result.Winner.Move);
-        Assert.Contains("No candidate met the minimum threshold", result.Winner.Rationale);
+        Assert.Equal("helpful_reply", result.Winner.Move);
     }
 
     [Fact]
-    public void SelectBest_ShouldReturnReply_WhenScoreJustAboveRelaxedThreshold()
+    public void SelectBest_ShouldSkipEmptyReply_WhenMoveIsNotNoReply()
     {
-        // Arrange
-        var scores = new List<CandidateScore>
-        {
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, ComputedTotal = 0.46, Tone = 0.3, HallucinationPenalty = 0.1 }
-        };
+        var result = _engine.SelectBest(
+            [
+                new CandidateScore
+                {
+                    Candidate = new SocialMoveCandidate { Move = "rewrite_user_intent", Reply = string.Empty },
+                    ComputedTotal = 0.80
+                },
+                new CandidateScore
+                {
+                    Candidate = new SocialMoveCandidate { Move = "respond_helpfully", Reply = "Thanks for reaching out. Happy to hear more." },
+                    ComputedTotal = 0.60
+                }
+            ],
+            new SocialSituation { Type = "direct_message" },
+            CreateContext("messaging_chat", "reply", allowNoReply: false));
 
-        // Act
-        var result = _engine.SelectBest(scores, new MessageContext());
-
-        // Assert
-        Assert.Equal("praise", result.Winner.Move);
+        Assert.Equal("respond_helpfully", result.Winner.Move);
     }
 
     [Fact]
-    public void SelectBest_ShouldReturnTopCandidateAndAlternatives()
+    public void SelectBest_ShouldPreferRewrite_WhenGapIsSmallAndDraftExists()
     {
-        // Arrange
-        var candidates = new List<SocialMoveCandidate>
-        {
-            new SocialMoveCandidate { Move = "congratulate", Reply = "Congrats!" },
-            new SocialMoveCandidate { Move = "praise", Reply = "Great job!" },
-            new SocialMoveCandidate { Move = "add_insight", Reply = "That's impressive!" }
-        };
+        var result = _engine.SelectBest(
+            [
+                new CandidateScore
+                {
+                    Candidate = new SocialMoveCandidate { Move = "helpful_reply", Reply = "Thank you, I appreciate it." },
+                    ComputedTotal = 0.66
+                },
+                new CandidateScore
+                {
+                    Candidate = new SocialMoveCandidate { Move = "rewrite_user_intent", Reply = "Thank you, I really appreciate it." },
+                    ComputedTotal = 0.62
+                }
+            ],
+            new SocialSituation { Type = "rewrite_direct_message" },
+            CreateContext("messaging_chat", "thank you really appreciate it", allowNoReply: false));
 
-        var scores = new List<CandidateScore>
-        {
-            new CandidateScore { Candidate = candidates[0], ComputedTotal = 0.9, Tone = 0.8, HallucinationPenalty = 0.1 },
-            new CandidateScore { Candidate = candidates[1], ComputedTotal = 0.8, Tone = 0.7, HallucinationPenalty = 0.1 },
-            new CandidateScore { Candidate = candidates[2], ComputedTotal = 0.7, Tone = 0.6, HallucinationPenalty = 0.1 }
-        };
-
-        // Act
-        var result = _engine.SelectBest(scores, new MessageContext());
-
-        // Assert
-        Assert.Equal("congratulate", result.Winner.Move);
-        Assert.Equal(2, result.Alternatives.Count);
-        Assert.Contains(result.Alternatives, a => a.Move == "praise");
-        Assert.Contains(result.Alternatives, a => a.Move == "add_insight");
+        Assert.Equal("rewrite_user_intent", result.Winner.Move);
     }
 
-    [Fact]
-    public void SelectBest_ShouldPreferLowerRiskCandidateInTies()
+    private static MessageContext CreateContext(string surface, string message, bool allowNoReply)
     {
-        // Arrange
-        var candidates = new List<SocialMoveCandidate>
+        return new MessageContext
         {
-            new SocialMoveCandidate { Move = "challenge", Reply = "Interesting perspective, but have you considered..." },
-            new SocialMoveCandidate { Move = "add_insight", Reply = "That's a great point, and I'd add that..." }
+            Surface = surface,
+            InteractionMode = surface == "messaging_chat" ? "chat" : "reply",
+            Message = message,
+            SourceText = "Thanks for making the intro yesterday.",
+            InteractionMetadata = new Dictionary<string, string>
+            {
+                ["allow_no_reply"] = allowNoReply.ToString()
+            }
         };
-
-        var scores = new List<CandidateScore>
-        {
-            new CandidateScore { Candidate = candidates[0], ComputedTotal = 0.85, Tone = 0.8, HallucinationPenalty = 0.1, RiskAdjustedValue = 0.6 },
-            new CandidateScore { Candidate = candidates[1], ComputedTotal = 0.85, Tone = 0.8, HallucinationPenalty = 0.1, RiskAdjustedValue = 0.8 }
-        };
-
-        // Act
-        var result = _engine.SelectBest(scores, new MessageContext());
-
-        // Assert
-        Assert.Equal("add_insight", result.Winner.Move);
-    }
-
-    [Fact]
-    public void SelectBest_ShouldFilterOutHallucinatedCandidates()
-    {
-        // Arrange
-        var scores = new List<CandidateScore>
-        {
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, ComputedTotal = 0.8, Tone = 0.8, HallucinationPenalty = 0.5 },
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, ComputedTotal = 0.7, Tone = 0.7, HallucinationPenalty = 0.1 }
-        };
-
-        // Act
-        var result = _engine.SelectBest(scores, new MessageContext());
-
-        // Assert
-        Assert.Equal("praise", result.Winner.Move);
-    }
-
-    [Fact]
-    public void SelectBest_ShouldFilterOutLowToneCandidates()
-    {
-        // Arrange
-        var scores = new List<CandidateScore>
-        {
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "congratulate" }, ComputedTotal = 0.8, Tone = 0.1, HallucinationPenalty = 0.1 },
-            new CandidateScore { Candidate = new SocialMoveCandidate { Move = "praise" }, ComputedTotal = 0.7, Tone = 0.8, HallucinationPenalty = 0.1 }
-        };
-
-        // Act
-        var result = _engine.SelectBest(scores, new MessageContext());
-
-        // Assert
-        Assert.Equal("praise", result.Winner.Move);
     }
 }

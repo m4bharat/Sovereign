@@ -11,6 +11,26 @@
     let observerStarted = false;
     let lastFocusedComposer = null;
 
+    function getPlatformConfig() {
+        const host = window.location.hostname.toLowerCase();
+        const isLinkedIn = host === "www.linkedin.com" || host.endsWith(".linkedin.com");
+        const isX = host === "x.com" || host === "www.x.com" || host === "x.xom" || host === "www.x.xom";
+
+        if (isX) {
+            return {
+                key: "x",
+                label: "X",
+                contactPrefix: "x"
+            };
+        }
+
+        return {
+            key: isLinkedIn ? "linkedin" : "social",
+            label: isLinkedIn ? "LinkedIn" : "Social",
+            contactPrefix: isLinkedIn ? "linkedin" : "social"
+        };
+    }
+
     function log(...args) {
         if (DEBUG) {
             console.log("[Sovereign]", ...args);
@@ -125,8 +145,9 @@
 
         const isContentEditable = el.getAttribute("contenteditable") === "true";
         const isProseMirror = el.matches?.(".ProseMirror, .tiptap.ProseMirror");
+        const dataTestId = (el.getAttribute("data-testid") || "").toLowerCase();
 
-        if (!isContentEditable && !isProseMirror) return false;
+        if (!isContentEditable && !isProseMirror && !dataTestId.includes("tweettextarea")) return false;
 
         const role = el.getAttribute("role") || "";
         const ariaMultiline = el.getAttribute("aria-multiline") || "";
@@ -141,16 +162,23 @@
             isProseMirror ||
             role === "textbox" ||
             ariaMultiline === "true" ||
+            dataTestId.includes("tweettextarea") ||
+            ariaLabel.includes("post") ||
+            ariaLabel.includes("reply") ||
+            ariaLabel.includes("tweet") ||
             ariaLabel.includes("write") ||
             ariaLabel.includes("message") ||
             ariaLabel.includes("text editor") ||
+            placeholder.includes("post") ||
+            placeholder.includes("reply") ||
+            placeholder.includes("tweet") ||
             placeholder.includes("write") ||
             placeholder.includes("message") ||
             placeholder.includes("talk about")
         );
     }
 
-    function detectSurface(composer) {
+    function detectLinkedInSurface(composer) {
         if (!composer) return { surface: "unknown", container: null };
 
         const shareBox =
@@ -187,8 +215,80 @@
         };
     }
 
+    function detectXSurface(composer) {
+        if (!composer) return { surface: "unknown", container: null };
+
+        const dmContainer =
+            closestSafe(composer, '[data-testid="dmComposerTextInput"]') ||
+            closestSafe(composer, '[data-testid="DmComposerTextInput"]') ||
+            closestSafe(composer, '[data-testid="DMDrawer"]') ||
+            (window.location.pathname.startsWith("/messages") ? closestSafe(composer, "main") : null);
+
+        if (dmContainer) {
+            return { surface: "messaging_chat", container: dmContainer };
+        }
+
+        const tweetContainer =
+            closestSafe(composer, '[data-testid="tweet"]') ||
+            closestSafe(composer, 'article[data-testid="tweet"]') ||
+            closestSafe(composer, "article");
+
+        if (tweetContainer) {
+            return { surface: "feed_reply", container: tweetContainer };
+        }
+
+        const form = closestSafe(composer, "form");
+        if (form) {
+            const buttonText = normalizeText(form.innerText || "", 400).toLowerCase();
+            if (buttonText.includes("reply")) {
+                return { surface: "feed_reply", container: form };
+            }
+
+            return { surface: "start_post", container: form };
+        }
+
+        if (
+            window.location.pathname.startsWith("/compose/post") ||
+            window.location.pathname === "/home"
+        ) {
+            return { surface: "start_post", container: composer.parentElement || null };
+        }
+
+        return {
+            surface: "unknown",
+            container: composer.parentElement || null
+        };
+    }
+
+    function detectSurface(composer) {
+        const platform = getPlatformConfig();
+        if (platform.key === "x") {
+            return detectXSurface(composer);
+        }
+
+        return detectLinkedInSurface(composer);
+    }
+
     function getInjectionHost(composer) {
         const { surface, container } = detectSurface(composer);
+        const platform = getPlatformConfig();
+
+        if (platform.key === "x") {
+            if (surface === "messaging_chat") {
+                return (
+                    closestSafe(composer, "form") ||
+                    container?.querySelector?.('[data-testid="dmComposerSendButton"]')?.parentElement ||
+                    composer.parentElement ||
+                    container
+                );
+            }
+
+            if (surface === "start_post" || surface === "feed_reply") {
+                return closestSafe(composer, "form") || composer.parentElement || container;
+            }
+
+            return composer.parentElement || container;
+        }
 
         if (surface === "start_post") {
             return (
@@ -277,6 +377,22 @@
     function getSourceAuthor(container) {
         if (!container) return "";
 
+        const platform = getPlatformConfig();
+        if (platform.key === "x") {
+            const candidates = container.querySelectorAll(
+                '[data-testid="User-Name"] span, a[href^="/"][role="link"] span'
+            );
+
+            for (const node of candidates) {
+                const text = normalizeText(node.innerText || "", 120);
+                if (text && !text.startsWith("@")) {
+                    return text;
+                }
+            }
+
+            return "";
+        }
+
         const candidates = container.querySelectorAll('a[href*="/in/"], a[href*="/company/"]');
         for (const link of candidates) {
             const text = normalizeText(link.innerText || "", 120);
@@ -303,6 +419,19 @@
     function getSourceText(container) {
         if (!container) return "";
 
+        const platform = getPlatformConfig();
+        if (platform.key === "x") {
+            return getTextFromSelectors(
+                container,
+                [
+                    '[data-testid="tweetText"]',
+                    '[data-testid="tweetTextarea_0"]',
+                    '[role="textbox"]'
+                ],
+                3500
+            );
+        }
+
         return getTextFromSelectors(
             container,
             [
@@ -320,6 +449,21 @@
     function getSourceTitle(container) {
         if (!container) return "";
 
+        const platform = getPlatformConfig();
+        if (platform.key === "x") {
+            const title =
+                getTextFromSelectors(
+                    container,
+                    [
+                        '[data-testid="User-Name"]',
+                        'a[href^="/"][role="link"]'
+                    ],
+                    200
+                ) || document.title;
+
+            return normalizeText(title, 200);
+        }
+
         const nodes = container.querySelectorAll("p, span");
         for (const node of nodes) {
             const text = normalizeText(node.innerText || "", 300);
@@ -333,6 +477,25 @@
 
     function getNearbyComments(container) {
         if (!container) return "";
+
+        const platform = getPlatformConfig();
+        if (platform.key === "x") {
+            const nodes = container.parentElement?.querySelectorAll?.('[data-testid="tweetText"]') || [];
+            const out = [];
+            const seen = new Set();
+
+            for (const node of nodes) {
+                const text = normalizeText(node.innerText || "", 300);
+                if (!text || seen.has(text)) continue;
+                seen.add(text);
+                out.push(text);
+                if (out.length >= 4) {
+                    break;
+                }
+            }
+
+            return out.join("\n").slice(0, 1200);
+        }
 
         const selectors = [
             ".comments-comment-item__main-content",
@@ -362,6 +525,19 @@
     }
 
     function getMessageRecipientName(composer) {
+        const platform = getPlatformConfig();
+        if (platform.key === "x") {
+            const panel =
+                closestSafe(composer, '[data-testid="DMDrawer"]') ||
+                closestSafe(composer, "main");
+
+            const title =
+                panel?.querySelector?.('[data-testid="DMDrawer"] [dir="auto"]') ||
+                panel?.querySelector?.('header [dir="auto"]');
+
+            return normalizeText(title?.innerText || "", 200) || "x-message-contact";
+        }
+
         const bubble =
             closestSafe(composer, ".msg-overlay-conversation-bubble") ||
             closestSafe(composer, ".msg-form") ||
@@ -377,6 +553,58 @@
     }
 
     function getLatestMessageContext(composer) {
+        const platform = getPlatformConfig();
+        if (platform.key === "x") {
+            const panel =
+                closestSafe(composer, '[data-testid="DMDrawer"]') ||
+                closestSafe(composer, "main");
+
+            if (!panel) {
+                return {
+                    latestMessage: "",
+                    nearbyMessages: "",
+                    recentRelationshipSummary: ""
+                };
+            }
+
+            const messageItems = Array.from(
+                panel.querySelectorAll('[data-testid="messageEntry"], [data-testid="conversation"]')
+            );
+
+            const visibleMessages = messageItems
+                .map((item) => {
+                    const body = normalizeText(item.innerText || "", 280);
+                    if (!body) return null;
+
+                    return {
+                        sender: "",
+                        body,
+                        combined: body
+                    };
+                })
+                .filter(Boolean);
+
+            const latestMessage = visibleMessages.length
+                ? visibleMessages[visibleMessages.length - 1].combined
+                : "";
+
+            const nearbyMessages = visibleMessages
+                .slice(-5)
+                .map((m) => m.combined)
+                .join("\n");
+
+            const recentRelationshipSummary = visibleMessages
+                .slice(-3)
+                .map((m) => m.combined)
+                .join(" | ");
+
+            return {
+                latestMessage,
+                nearbyMessages,
+                recentRelationshipSummary
+            };
+        }
+
         const bubble =
             closestSafe(composer, ".msg-overlay-conversation-bubble") ||
             closestSafe(composer, ".msg-form") ||
@@ -447,21 +675,63 @@
         };
     }
 
+    function getXComposeContext(composer, container) {
+        const scope =
+            closestSafe(composer, '[role="dialog"]') ||
+            closestSafe(composer, "main") ||
+            container ||
+            document;
+
+        const form = closestSafe(composer, "form");
+        const candidateTweets = Array.from(
+            scope.querySelectorAll('article[data-testid="tweet"], [data-testid="tweet"]')
+        ).filter((node) => !form?.contains(node));
+
+        const primaryTweet = candidateTweets[0] || null;
+        const sourceAuthor = getSourceAuthor(primaryTweet || scope);
+        const sourceTitle = getSourceTitle(primaryTweet || scope);
+        const sourceText = getSourceText(primaryTweet || scope);
+
+        const nearbyTexts = [];
+        const seen = new Set();
+        for (const node of candidateTweets) {
+            const text = getSourceText(node);
+            if (!text || seen.has(text)) continue;
+            seen.add(text);
+            nearbyTexts.push(text);
+            if (nearbyTexts.length >= 4) break;
+        }
+
+        return {
+            sourceAuthor,
+            sourceTitle: sourceTitle || document.title,
+            sourceText,
+            nearbyContextText: nearbyTexts.join("\n").slice(0, 1200)
+        };
+    }
+
     function buildContext(composer) {
         const { surface, container } = detectSurface(composer);
+        const platform = getPlatformConfig();
+        const platformKey = platform.key;
+        const platformLabel = platform.label;
+        const contactPrefix = platform.contactPrefix;
 
         if (surface === "start_post") {
+            const xComposeContext =
+                platformKey === "x" ? getXComposeContext(composer, container) : null;
+
             return {
-                ContactId: "linkedin-post-compose",
+                ContactId: `${contactPrefix}-post-compose`,
                 RelationshipRole: "Peer",
-                Platform: "linkedin",
+                Platform: platformKey,
                 Surface: "start_post",
                 CurrentUrl: window.location.href,
-                SourceAuthor: "",
-                SourceTitle: "LinkedIn post composer",
-                SourceText: "",
-                ParentContextText: "",
-                NearbyContextText: "",
+                SourceAuthor: xComposeContext?.sourceAuthor || "",
+                SourceTitle: xComposeContext?.sourceTitle || `${platformLabel} post composer`,
+                SourceText: xComposeContext?.sourceText || "",
+                ParentContextText: xComposeContext?.sourceText || "",
+                NearbyContextText: xComposeContext?.nearbyContextText || "",
                 LastInteractionDays: 0,
                 TotalInteractions: 0,
                 ReciprocityScore: 0,
@@ -484,13 +754,13 @@
             const messageContext = getLatestMessageContext(composer);
 
             return {
-                ContactId: recipient || "linkedin-message-contact",
+                ContactId: recipient || `${contactPrefix}-message-contact`,
                 RelationshipRole: "Peer",
-                Platform: "linkedin",
+                Platform: platformKey,
                 Surface: "messaging_chat",
                 CurrentUrl: window.location.href,
                 SourceAuthor: recipient || "",
-                SourceTitle: "LinkedIn message thread",
+                SourceTitle: `${platformLabel} message thread`,
                 SourceText: messageContext.latestMessage || "",
                 ParentContextText: messageContext.nearbyMessages || "",
                 NearbyContextText: messageContext.nearbyMessages || "",
@@ -521,9 +791,9 @@
             const nearbyComments = getNearbyComments(container);
 
             return {
-                ContactId: sourceAuthor || "linkedin-post-contact",
+                ContactId: sourceAuthor || `${contactPrefix}-post-contact`,
                 RelationshipRole: "Peer",
-                Platform: "linkedin",
+                Platform: platformKey,
                 Surface: "feed_reply",
                 CurrentUrl: window.location.href,
                 SourceAuthor: sourceAuthor || "",
@@ -549,9 +819,9 @@
         }
 
         return {
-            ContactId: "linkedin-compose-contact",
+            ContactId: `${contactPrefix}-compose-contact`,
             RelationshipRole: "Peer",
-            Platform: "linkedin",
+            Platform: platformKey,
             Surface: "post_compose",
             CurrentUrl: window.location.href,
             SourceAuthor: "",
@@ -578,12 +848,13 @@
 
     function createPayload(composer) {
         const context = buildContext(composer);
+        const platform = getPlatformConfig();
 
         return {
             UserId: "user-001",
-            ContactId: context.ContactId || "linkedin-compose-contact",
+            ContactId: context.ContactId || `${platform.contactPrefix}-compose-contact`,
             Message: getComposerText(composer),
-            Platform: context.Platform || "linkedin",
+            Platform: context.Platform || platform.key,
             Surface: context.Surface || "post_compose",
             CurrentUrl: context.CurrentUrl || "",
             SourceAuthor: context.SourceAuthor || "",

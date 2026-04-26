@@ -1,38 +1,84 @@
-using System.Linq;
-using Xunit;
 using Sovereign.Domain.Models;
-using Sovereign.Intelligence.Services;
 using Sovereign.Intelligence.Models;
+using Sovereign.Intelligence.Services;
+using Xunit;
 
-namespace Sovereign.Tests.ScoringGenerationTests
+namespace Sovereign.Tests.ScoringGenerationTests;
+
+public class CandidateReplyGeneratorTests
 {
-    public class CandidateReplyGeneratorTests
+    private readonly CandidateReplyGenerator _generator = new();
+
+    [Fact]
+    public void Generate_ShouldIncludeSourceAnchor_ForFeedReply()
     {
-        [Fact]
-        public void Generate_ShouldReturnCandidatesWithReplies()
-        {
-            // Arrange
-            var generator = new CandidateReplyGenerator();
-            var moveCandidates = new[]
+        var result = _generator.Generate(
+            [new SocialMoveCandidate { Move = "add_insight" }],
+            new MessageContext
             {
-                new SocialMoveCandidate { Move = "congratulate", Rationale = "Test" },
-                new SocialMoveCandidate { Move = "appreciate", Rationale = "Test" }
-            };
-            var context = new MessageContext
+                Surface = "feed_reply",
+                InteractionMode = "reply",
+                Message = "comment",
+                SourceTitle = "Multi-model resilience",
+                SourceText = "Multi model architecture reduces provider dependency and improves resilience."
+            });
+
+        var reply = Assert.Single(result).Reply;
+        Assert.Contains("provider", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("great post", reply, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_ShouldPreserveUserIntent_ForMessagingRewrite()
+    {
+        var result = _generator.Generate(
+            [new SocialMoveCandidate { Move = "rewrite_user_intent" }],
+            new MessageContext
             {
-                SourceAuthor = "John Doe",
-                SourceText = "I got promoted!"
-            };
+                Surface = "messaging_chat",
+                InteractionMode = "chat",
+                Message = "thank you really appreciate it"
+            });
 
-            // Act
-            var result = generator.Generate(moveCandidates, context);
+        var reply = Assert.Single(result).Reply;
+        Assert.Contains("Thank", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("appreciate", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("linkedin", reply, StringComparison.OrdinalIgnoreCase);
+    }
 
-            // Assert
-            Assert.Equal(2, result.Count);
-            Assert.All(result, c => Assert.NotNull(c.Reply));
-            Assert.Contains("Congratulations", result.First().Reply);
-        }
+    [Fact]
+    public void Generate_ShouldCreateNonEmptyPost_ForStartPost()
+    {
+        var result = _generator.Generate(
+            [new SocialMoveCandidate { Move = "draft_post" }],
+            new MessageContext
+            {
+                Surface = "start_post",
+                InteractionMode = "compose",
+                Message = "Write a LinkedIn post on AI workflow evaluation and ownership"
+            });
 
-        // Generate_ShouldSetRequiresPolishToTrue removed per user instruction - logic changed
+        var reply = Assert.Single(result).Reply;
+        Assert.True(reply.Length >= 120);
+        Assert.Contains("workflow", reply, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_ShouldAvoidForcedCta_WhenNotRequested()
+    {
+        var result = _generator.Generate(
+            [new SocialMoveCandidate { Move = "add_insight" }],
+            new MessageContext
+            {
+                Surface = "feed_reply",
+                InteractionMode = "reply",
+                Message = "comment",
+                SourceText = "Execution quality matters more than model hype."
+            });
+
+        var reply = Assert.Single(result).Reply;
+        Assert.DoesNotContain("What do you think?", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Thoughts?", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Agree?", reply, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -6,5 +6,6 @@ namespace Sovereign.Intelligence.Interfaces;
 
 public interface IWinnerSelectionEngine
 {
+    WinnerSelectionResult SelectBest(IReadOnlyList<CandidateScore> scoredCandidates, SocialSituation situation, MessageContext context);
     WinnerSelectionResult SelectBest(IReadOnlyList<CandidateScore> scoredCandidates, MessageContext context);
 }
