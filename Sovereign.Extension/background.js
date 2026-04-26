@@ -59,11 +59,76 @@ function normalizeRequestBody(settings, payload) {
     };
 }
 
+function normalizeTelemetryBody(settings, payload) {
+    const p = payload || {};
+
+    return {
+        UserId: p.UserId || p.userId || settings.sovereignUserId || "user-001",
+        TenantId: p.TenantId || p.tenantId || null,
+        SessionId: p.SessionId || p.sessionId || null,
+        EventType: p.EventType || p.eventType || "",
+        Platform: p.Platform || p.platform || null,
+        Surface: p.Surface || p.surface || null,
+        CurrentUrl: p.CurrentUrl || p.currentUrl || null,
+        SuggestionId: p.SuggestionId || p.suggestionId || null,
+        RequestId: p.RequestId || p.requestId || null,
+        SituationType: p.SituationType || p.situationType || null,
+        Move: p.Move || p.move || null,
+        Strategy: p.Strategy || p.strategy || null,
+        Tone: p.Tone || p.tone || null,
+        Confidence: p.Confidence ?? p.confidence ?? null,
+        SourceAuthor: p.SourceAuthor || p.sourceAuthor || null,
+        SourceTitle: p.SourceTitle || p.sourceTitle || null,
+        SourceText: p.SourceText || p.sourceText || null,
+        InputMessage: p.InputMessage || p.inputMessage || null,
+        Reply: p.Reply || p.reply || null,
+        EditedReply: p.EditedReply || p.editedReply || null,
+        LatencyMs: p.LatencyMs ?? p.latencyMs ?? null,
+        ModelProvider: p.ModelProvider || p.modelProvider || null,
+        ModelName: p.ModelName || p.modelName || null,
+        Accepted: p.Accepted ?? p.accepted ?? null,
+        Posted: p.Posted ?? p.posted ?? null,
+        Regenerated: p.Regenerated ?? p.regenerated ?? null,
+        Metadata: p.Metadata || p.metadata || {}
+    };
+}
+
 function extractErrorMessage(status, data, rawText) {
     if (data && data.error) return data.error;
     if (data && data.title) return data.title;
     if (rawText && rawText.trim()) return rawText.trim();
     return `HTTP ${status}`;
+}
+
+async function postJson(settings, endpoint, payload) {
+    const response = await fetch(`${settings.sovereignApiBaseUrl}${endpoint}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            ...(settings.sovereignAuthToken
+                ? { Authorization: `Bearer ${settings.sovereignAuthToken}` }
+                : {})
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const rawText = await response.text();
+    let data = null;
+
+    try {
+        data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+        data = null;
+    }
+
+    if (!response.ok) {
+        throw new Error(extractErrorMessage(response.status, data, rawText));
+    }
+
+    return {
+        status: response.status,
+        data: data || {}
+    };
 }
 
 async function focusBestSocialTab() {
@@ -131,6 +196,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message.type === "SOVEREIGN_TRACK_TELEMETRY") {
+        getSettings()
+            .then(async (settings) => {
+                const requestBody = normalizeTelemetryBody(settings, message.payload);
+                const result = await postJson(settings, "/api/telemetry/events", requestBody);
+
+                sendResponse({
+                    ok: true,
+                    status: result.status,
+                    data: result.data
+                });
+            })
+            .catch((error) => {
+                sendResponse({
+                    ok: false,
+                    error: error?.message || String(error)
+                });
+            });
+        return true;
+    }
+
     if (message.type !== "SOVEREIGN_DECIDE") {
         return false;
     }
@@ -145,40 +231,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             console.log("[Sovereign background] normalized request body:", requestBody);
 
-            const response = await fetch(`${settings.sovereignApiBaseUrl}${endpoint}`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    ...(settings.sovereignAuthToken
-                        ? { Authorization: `Bearer ${settings.sovereignAuthToken}` }
-                        : {})
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const rawText = await response.text();
-            let data = null;
-
-            try {
-                data = rawText ? JSON.parse(rawText) : {};
-            } catch {
-                data = null;
-            }
-
-            if (!response.ok) {
-                sendResponse({
-                    ok: false,
-                    status: response.status,
-                    error: extractErrorMessage(response.status, data, rawText),
-                    data: data || rawText
-                });
-                return;
-            }
+            const result = await postJson(settings, endpoint, requestBody);
 
             sendResponse({
                 ok: true,
-                status: response.status,
-                data: data || {}
+                status: result.status,
+                data: result.data || {}
             });
         })
         .catch((error) => {

@@ -1,5 +1,6 @@
 (() => {
     const DEBUG = true;
+    const TELEMETRY_DEBUG = false;
     const BUTTON_CLASS = "sovereign-linkedin-button";
     const STATUS_CLASS = "sovereign-linkedin-status";
     const SLOT_CLASS = "sovereign-action-slot";
@@ -10,6 +11,7 @@
     let scanTimer = null;
     let observerStarted = false;
     let lastFocusedComposer = null;
+    const suggestionStateByComposer = new WeakMap();
 
     function getPlatformConfig() {
         const host = window.location.hostname.toLowerCase();
@@ -35,6 +37,155 @@
         if (DEBUG) {
             console.log("[Sovereign]", ...args);
         }
+    }
+
+    function createGuid() {
+        return crypto.randomUUID();
+    }
+
+    function getTelemetryState(composer) {
+        return suggestionStateByComposer.get(composer) || null;
+    }
+
+    function setTelemetryState(composer, nextState) {
+        if (!composer || !nextState) return;
+        suggestionStateByComposer.set(composer, nextState);
+    }
+
+    function buildTelemetryBase(composer, payload, telemetryIds) {
+        return {
+            suggestionId: telemetryIds.suggestionId,
+            requestId: telemetryIds.requestId,
+            surface: payload.Surface,
+            platform: payload.Platform,
+            currentUrl: payload.CurrentUrl,
+            sourceAuthor: payload.SourceAuthor,
+            sourceTitle: payload.SourceTitle,
+            sourceText: payload.SourceText,
+            inputMessage: payload.Message,
+            metadata: {
+                debugMode: String(TELEMETRY_DEBUG),
+                pageTitle: document.title,
+                autoInsert: "true",
+                composerSurface: payload.Surface || "unknown"
+            }
+        };
+    }
+
+    function trackTelemetry(eventType, data = {}) {
+        const payload = {
+            eventType,
+            ...data
+        };
+
+        chrome.runtime.sendMessage({ type: "SOVEREIGN_TRACK_TELEMETRY", payload }, (res) => {
+            if (chrome.runtime.lastError) {
+                log("telemetry runtime error", eventType, chrome.runtime.lastError.message);
+                return;
+            }
+
+            if (!res?.ok) {
+                log("telemetry request failed", eventType, res?.error || "unknown error");
+            }
+        });
+    }
+
+    function scheduleEditedTelemetry(composer) {
+        const state = getTelemetryState(composer);
+        if (!state || state.posted || state.discarded) return;
+
+        if (state.editTimer) {
+            clearTimeout(state.editTimer);
+        }
+
+        state.editTimer = setTimeout(() => {
+            const currentComposerText = getComposerText(composer);
+            if (!currentComposerText) {
+                if (!state.discarded && !state.posted) {
+                    trackTelemetry("suggestion_discarded", {
+                        suggestionId: state.suggestionId,
+                        requestId: state.requestId,
+                        surface: state.surface,
+                        platform: state.platform,
+                        currentUrl: window.location.href,
+                        discarded: true,
+                        editedReply: ""
+                    });
+                    state.discarded = true;
+                }
+                return;
+            }
+
+            if (currentComposerText !== state.originalReply && currentComposerText !== state.lastEditedReply) {
+                state.lastEditedReply = currentComposerText;
+                trackTelemetry("suggestion_edited", {
+                    suggestionId: state.suggestionId,
+                    requestId: state.requestId,
+                    surface: state.surface,
+                    platform: state.platform,
+                    currentUrl: window.location.href,
+                    reply: state.originalReply,
+                    editedReply: currentComposerText
+                });
+            }
+        }, 900);
+    }
+
+    function handleComposerInput(event) {
+        const composer = event.target;
+        if (!composer || !isElement(composer)) return;
+        if (!isEditableTextbox(composer)) return;
+
+        scheduleEditedTelemetry(composer);
+    }
+
+    function isSendAction(node) {
+        if (!node || !isElement(node)) return false;
+
+        const text = normalizeText(node.innerText || node.textContent || "", 80).toLowerCase();
+        const ariaLabel = (node.getAttribute("aria-label") || "").toLowerCase();
+        const dataTestId = (node.getAttribute("data-testid") || "").toLowerCase();
+        const className = String(node.className || "").toLowerCase();
+
+        return (
+            text === "post" ||
+            text === "send" ||
+            text === "reply" ||
+            text === "comment" ||
+            ariaLabel.includes("post") ||
+            ariaLabel.includes("send") ||
+            ariaLabel.includes("reply") ||
+            ariaLabel.includes("comment") ||
+            dataTestId.includes("tweetbutton") ||
+            dataTestId.includes("dmcomposersendbutton") ||
+            className.includes("comments-comment-box__submit-button") ||
+            className.includes("share-actions__primary-action")
+        );
+    }
+
+    function tryTrackPosted(event) {
+        const path = event.composedPath ? event.composedPath() : [event.target];
+        const clickedNode = path.find((node) => isElement(node) && isSendAction(node));
+
+        if (!clickedNode) return;
+
+        const composer = findComposerFromPath(path) || lastFocusedComposer;
+        if (!composer) return;
+
+        const state = getTelemetryState(composer);
+        if (!state || state.posted || state.discarded) return;
+
+        state.posted = true;
+        trackTelemetry("suggestion_posted", {
+            suggestionId: state.suggestionId,
+            requestId: state.requestId,
+            surface: state.surface,
+            platform: state.platform,
+            currentUrl: window.location.href,
+            posted: true,
+            reply: state.originalReply,
+            editedReply: getComposerText(composer)
+        });
     }
 
     function isElement(node) {
@@ -983,7 +1134,17 @@
         return "";
     }
 
-    function callDecide(payload, button, slot, composer) {
+    function readResponseValue(data, keys) {
+        for (const key of keys) {
+            if (data && data[key] != null) {
+                return data[key];
+            }
+        }
+
+        return null;
+    }
+
+    function callDecide(payload, button, slot, composer, telemetryBase) {
         log("request payload", {
             surface: payload.Surface,
             contact: payload.ContactId,
@@ -997,6 +1158,9 @@
         button.textContent = "Thinking...";
         button.setAttribute("data-sovereign-busy", "true");
         setStatus(slot, "Generating suggestion...", "info");
+
+        const requestStartedAt = Date.now();
+        trackTelemetry("suggestion_requested", telemetryBase);
 
         chrome.runtime.sendMessage({ type: "SOVEREIGN_DECIDE", payload }, (res) => {
             button.textContent = "Suggest with Sovereign";
@@ -1016,6 +1180,14 @@
             }
 
             const suggestion = extractSuggestion(res?.data);
+            const latencyMs = Date.now() - requestStartedAt;
+            const responseSituationType = readResponseValue(res?.data, ["SituationType", "situationType"]);
+            const responseMove = readResponseValue(res?.data, ["Move", "move"]);
+            const responseTone = readResponseValue(res?.data, ["Tone", "tone"]);
+            const responseConfidence = readResponseValue(res?.data, ["Confidence", "confidence"]);
+            const responseStrategy = readResponseValue(res?.data, ["Strategy", "strategy"]);
+            const responseModelProvider = readResponseValue(res?.data, ["ModelProvider", "modelProvider"]);
+            const responseModelName = readResponseValue(res?.data, ["ModelName", "modelName"]);
             console.log("[Sovereign] extracted suggestion:", suggestion);
 
             if (!suggestion) {
@@ -1024,10 +1196,47 @@
                 return;
             }
 
+            trackTelemetry("suggestion_generated", {
+                ...telemetryBase,
+                situationType: responseSituationType,
+                move: responseMove,
+                strategy: responseStrategy,
+                tone: responseTone,
+                confidence: responseConfidence,
+                reply: suggestion,
+                latencyMs,
+                modelProvider: responseModelProvider,
+                modelName: responseModelName
+            });
+
             if (!insertTextIntoEditor(composer, suggestion)) {
                 setStatus(slot, "Suggestion received, but insert failed.", "error");
                 return;
             }
+
+            setTelemetryState(composer, {
+                suggestionId: telemetryBase.suggestionId,
+                requestId: telemetryBase.requestId,
+                originalReply: suggestion,
+                lastEditedReply: suggestion,
+                surface: payload.Surface,
+                platform: payload.Platform,
+                posted: false,
+                discarded: false,
+                regenerated: false,
+                editTimer: null
+            });
+
+            trackTelemetry("suggestion_inserted", {
+                ...telemetryBase,
+                situationType: responseSituationType,
+                move: responseMove,
+                strategy: responseStrategy,
+                tone: responseTone,
+                confidence: responseConfidence,
+                accepted: true,
+                reply: suggestion
+            });
 
             setStatus(slot, "Suggestion inserted.", "success");
             setTimeout(() => clearStatus(slot), 2500);
@@ -1045,7 +1254,26 @@
         const token = await ensureAuthenticated(payload, slot);
         if (!token) return;
 
-        callDecide(payload, button, slot, composer);
+        const existingState = getTelemetryState(composer);
+        if (existingState && !existingState.posted && !existingState.discarded && !existingState.regenerated) {
+            existingState.regenerated = true;
+            trackTelemetry("suggestion_regenerated", {
+                suggestionId: existingState.suggestionId,
+                requestId: existingState.requestId,
+                surface: existingState.surface,
+                platform: existingState.platform,
+                currentUrl: window.location.href,
+                regenerated: true
+            });
+        }
+
+        const telemetryIds = {
+            suggestionId: createGuid(),
+            requestId: createGuid()
+        };
+
+        const telemetryBase = buildTelemetryBase(composer, payload, telemetryIds);
+        callDecide(payload, button, slot, composer, telemetryBase);
     }
 
     async function tryResumePendingSuggestion(composer) {
@@ -1075,7 +1303,12 @@
 
         setStatus(slot, "Resuming your saved suggestion...", "info");
         await clearPendingSuggestion();
-        callDecide(pending.payload, button, slot, composer);
+        const telemetryIds = {
+            suggestionId: createGuid(),
+            requestId: createGuid()
+        };
+        const telemetryBase = buildTelemetryBase(composer, pending.payload, telemetryIds);
+        callDecide(pending.payload, button, slot, composer, telemetryBase);
     }
 
     function injectButton(composer) {
@@ -1106,6 +1339,11 @@
 
             slot.prepend(button);
             getOrCreateStatus(slot);
+        }
+
+        if (!composer.hasAttribute("data-sovereign-telemetry-bound")) {
+            composer.setAttribute("data-sovereign-telemetry-bound", "true");
+            composer.addEventListener("input", handleComposerInput, true);
         }
 
         void tryResumePendingSuggestion(composer);
@@ -1229,5 +1467,6 @@
 
     document.addEventListener("focusin", onFocusOrClick, true);
     document.addEventListener("click", onFocusOrClick, true);
+    document.addEventListener("click", tryTrackPosted, true);
     window.addEventListener("load", debounceScan);
 })();
